@@ -334,14 +334,14 @@ def get_audio_duration(audio_path: str) -> float:
 def render_lyric_video_ffmpeg(
     audio_path: str,
     ass_path: str,
-    output_path: str = "output_lyric_video.webm",
+    output_path: str = "output_lyric_video.mp4",
     duration: Optional[float] = None
 ) -> str:
-    """Step 3: Run FFmpeg to render ASS subtitles over 1080p 30fps transparent VP9 canvas with Opus audio."""
+    """Step 3: Run FFmpeg to render ASS subtitles over 1080p 30fps MP4 video with H.264 video and AAC audio."""
     if not duration or duration <= 0:
         duration = get_audio_duration(audio_path)
 
-    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering 1080p 30fps transparent video overlay ({duration:.1f}s)...")
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering 1080p 30fps MP4 video ({duration:.1f}s)...")
     
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
@@ -349,21 +349,21 @@ def render_lyric_video_ffmpeg(
 
     ffmpeg_cmd = [
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=c=black@0.0:s=1920x1080:r=30:d={duration:.2f}",
+        "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=30:d={duration:.2f}",
         "-i", audio_path,
         "-vf", f"ass={normalized_ass}",
-        "-c:v", "libvpx-vp9",
-        "-pix_fmt", "yuva420p",
-        "-deadline", "realtime",
-        "-cpu-used", "8",
-        "-row-mt", "1",
-        "-c:a", "libopus",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-crf", "18",
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
         "-b:a", "192k",
+        "-movflags", "+faststart",
         "-shortest",
         output_path
     ]
 
-    emit_progress("ffmpeg_rendering", 85, "Step 3: Encoding VP9 yuva420p alpha channel video with Opus audio...")
+    emit_progress("ffmpeg_rendering", 85, "Step 3: Encoding 1080p H.264 video with AAC audio...")
     subprocess.run(ffmpeg_cmd, check=True)
     emit_progress("ffmpeg_done", 95, f"Step 3: Video successfully rendered to '{output_path}'.")
     return output_path
@@ -371,7 +371,7 @@ def render_lyric_video_ffmpeg(
 
 def generate_lyric_video(
     song_query: str,
-    output_path: str = "output_lyric_video.webm",
+    output_path: str = "output_lyric_video.mp4",
     temp_audio_path: str = "temp_audio.mp3",
     temp_ass_path: str = "lyrics.ass",
     offset_seconds: float = 0.0
@@ -406,14 +406,14 @@ def generate_lyric_video(
         "rawLrc": raw_lrc
     }
 
-    emit_progress("completed", 100, "🎉 1080p Transparent Lyric Video ready!", final_result)
+    emit_progress("completed", 100, "🎉 1080p MP4 Lyric Video ready!", final_result)
     return final_result
 
 
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     query = args[0] if len(args) > 0 else "Rick Astley - Never Gonna Give You Up"
-    out = args[1] if len(args) > 1 else "output_lyric_video.webm"
+    out = args[1] if len(args) > 1 else "output_lyric_video.mp4"
     
     offset = 0.0
     for a in sys.argv[1:]:

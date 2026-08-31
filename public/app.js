@@ -230,7 +230,7 @@ function handleGenerationComplete(data) {
 
   // Setup Download Links
   dlVideoBtn.href = data.videoUrl;
-  dlVideoBtn.download = data.videoFileName || 'lyric_video_overlay.webm';
+  dlVideoBtn.download = data.videoFileName || 'lyric_video.mp4';
 
   if (data.metadata?.syncedLines) {
     setupAssetDownloadBlobs(data.metadata);
@@ -363,7 +363,7 @@ async function loadVideosGallery() {
       card.className = 'gallery-card';
 
       const cleanTitle = vid.filename
-        .replace(/\.webm$/, '')
+        .replace(/\.(mp4|webm)$/, '')
         .replace(/_[0-9]+$/, '')
         .replace(/[_-]/g, ' ');
 
@@ -374,7 +374,7 @@ async function loadVideosGallery() {
         </div>
         <div class="gallery-card-body">
           <strong class="gallery-card-title" title="${escapeHtml(cleanTitle)}">${escapeHtml(cleanTitle)}</strong>
-          <span class="gallery-card-meta">${vid.sizeMb} MB &bull; 1080p VP9 Transparent</span>
+          <span class="gallery-card-meta">${vid.sizeMb} MB &bull; 1080p ${(vid.format || 'mp4').toUpperCase()} Video</span>
           <div class="gallery-card-actions">
             <button class="mini-btn play-gallery-btn">Preview</button>
             <a href="${vid.url}" download="${vid.filename}" class="mini-btn" target="_blank">Download</a>

@@ -101,7 +101,7 @@ app.get('/api/generate-video-stream', (req, res) => {
   sendSSE('start', { message: `Initiating video generation for "${query}"...`, query });
 
   const safeName = query.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
-  const videoFileName = `${safeName}_${Date.now()}.webm`;
+  const videoFileName = `${safeName}_${Date.now()}.mp4`;
   const videoOutputPath = path.join(VIDEOS_DIR, videoFileName);
   const tempAudioPath = path.join(VIDEOS_DIR, `${safeName}_temp.mp3`);
   const tempAssPath = path.join(VIDEOS_DIR, `${safeName}_temp.ass`);
@@ -175,7 +175,7 @@ app.get('/api/generate-video-stream', (req, res) => {
 
 /**
  * GET /api/videos
- * List all rendered transparent lyric videos
+ * List all rendered lyric videos
  */
 app.get('/api/videos', async (req, res) => {
   try {
@@ -184,14 +184,15 @@ app.get('/api/videos', async (req, res) => {
     }
 
     const files = await fs.promises.readdir(VIDEOS_DIR);
-    const webmFiles = files.filter(f => f.endsWith('.webm'));
+    const videoFiles = files.filter(f => f.endsWith('.mp4') || f.endsWith('.webm'));
 
     const list = await Promise.all(
-      webmFiles.map(async (filename) => {
+      videoFiles.map(async (filename) => {
         const stat = await fs.promises.stat(path.join(VIDEOS_DIR, filename));
         return {
           filename,
           url: `/videos/${filename}`,
+          format: filename.endsWith('.mp4') ? 'mp4' : 'webm',
           sizeBytes: stat.size,
           sizeMb: (stat.size / (1024 * 1024)).toFixed(2),
           createdAt: stat.birthtime || stat.mtime

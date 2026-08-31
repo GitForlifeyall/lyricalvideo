@@ -10,6 +10,7 @@ const state = {
   generationOffset: 0.0,
   aspectRatio: 'portrait',
   fontFamily: 'Impact',
+  language: 'auto',
 };
 
 // DOM Elements
@@ -22,6 +23,8 @@ const offsetChips = document.querySelectorAll('.offset-chip');
 const aspectBtns = document.querySelectorAll('#aspect-ratio-group .pill-btn');
 const fontBtns = document.querySelectorAll('#font-group .font-pill');
 const customFontInput = document.getElementById('custom-font-input');
+const langBtns = document.querySelectorAll('#lang-group .lang-pill');
+const customLangInput = document.getElementById('custom-lang-input');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -130,6 +133,28 @@ function setupEventListeners() {
     });
   }
 
+  // Language Selection
+  langBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      langBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.language = btn.dataset.lang;
+      if (customLangInput) customLangInput.value = '';
+      showToast(`Language set to ${btn.textContent.trim()}`);
+    });
+  });
+
+  // Custom Language Input
+  if (customLangInput) {
+    customLangInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim().toLowerCase();
+      if (val) {
+        langBtns.forEach(b => b.classList.remove('active'));
+        state.language = val;
+      }
+    });
+  }
+
   // Offset chips
   offsetChips.forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -172,8 +197,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with aspect ratio and font parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}&aspect=${encodeURIComponent(state.aspectRatio)}&font=${encodeURIComponent(state.fontFamily)}`;
+  // Connect to SSE Endpoint with aspect ratio, font, and language parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}&aspect=${encodeURIComponent(state.aspectRatio)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -257,11 +282,11 @@ function handleGenerationComplete(data) {
   showToast('1080p MP4 Lyric Video Generated! 🚀');
 
   const isPortrait = (data.metadata?.aspect_ratio || state.aspectRatio) === 'portrait';
-  const fontUsed = data.metadata?.font_name || state.fontFamily;
+  const langUsed = data.metadata?.language || state.language;
 
   // Populate Studio Stage
   stageSongTitle.textContent = data.metadata?.track_name || data.query;
-  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; Font: ${fontUsed}`;
+  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; Font: ${fontUsed} &bull; Lang: ${langUsed.toUpperCase()}`;
 
   // Toggle Portrait frame styling on video container
   if (videoPreviewWrapper) {

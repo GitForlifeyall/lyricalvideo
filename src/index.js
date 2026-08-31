@@ -109,6 +109,7 @@ app.get('/api/generate-video-stream', (req, res) => {
   const offset = req.query.offset || '0.0';
   const aspect = req.query.aspect || 'portrait';
   const font = req.query.font || 'Impact';
+  const lang = req.query.lang || 'auto';
 
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonProcess = spawn('python', [
@@ -118,6 +119,7 @@ app.get('/api/generate-video-stream', (req, res) => {
     `--offset=${offset}`,
     `--aspect=${aspect}`,
     `--font=${font}`,
+    `--lang=${lang}`,
     '--json-progress'
   ], {
     cwd: path.join(__dirname, '..')

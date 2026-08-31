@@ -42,21 +42,40 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
         print(f"[{percent}% - {step}] {message}", flush=True)
 
 
-def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[float, float, str]]:
-    """Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET."""
+def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str = "auto") -> Tuple[List[Tuple[float, float, str]], str]:
+    """
+    Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET
+    matching the user's preferred language (e.g. en, es, fr, de, ja, ko, hi, auto).
+    """
     subtitles_dict = video_info.get("subtitles", {})
     auto_captions_dict = video_info.get("automatic_captions", {})
+    lang_pref = (target_lang or "auto").lower().strip()
 
     candidate_langs = []
-    for k in subtitles_dict.keys():
-        if k.startswith("en") and k != "live_chat":
-            candidate_langs.append(("manual", k, subtitles_dict[k]))
-    for k in auto_captions_dict.keys():
-        if k.startswith("en") and k != "live_chat":
-            candidate_langs.append(("auto", k, auto_captions_dict[k]))
-    for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
-        if k != "live_chat" and k not in [c[1] for c in candidate_langs]:
-            candidate_langs.append(("fallback", k, v))
+    
+    # 1. Match requested language in manual creator subtitles
+    for k, v in subtitles_dict.items():
+        if k != "live_chat":
+            if lang_pref == "auto" or k.lower().startswith(lang_pref) or lang_pref in k.lower():
+                candidate_langs.append(("manual", k, v))
+
+    # 2. Match requested language in automatic captions / translations
+    for k, v in auto_captions_dict.items():
+        if k != "live_chat":
+            if lang_pref == "auto" or k.lower().startswith(lang_pref) or lang_pref in k.lower():
+                candidate_langs.append(("auto", k, v))
+
+    # 3. Fallback to English if requested language not present
+    if not candidate_langs and lang_pref != "en":
+        for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
+            if k.lower().startswith("en") and k != "live_chat":
+                candidate_langs.append(("fallback_en", k, v))
+
+    # 4. Fallback to any first available subtitle track
+    if not candidate_langs:
+        for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
+            if k != "live_chat":
+                candidate_langs.append(("fallback_any", k, v))
 
     for kind, lang_key, formats in candidate_langs:
         json3_fmt = next((f for f in formats if f.get("ext") == "json3"), None)
@@ -74,15 +93,17 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[flo
                     data = resp.json()
                     cues = parse_json3_timedtext(data)
                     if cues:
-                        return cues
+                        print(f"[Subtitles] Fetched {len(cues)} cues for language '{lang_key}' ({kind})")
+                        return cues, lang_key
                 else:
                     cues = parse_vtt_text(resp.text)
                     if cues:
-                        return cues
-        except Exception:
-            pass
+                        print(f"[Subtitles] Parsed {len(cues)} VTT cues for language '{lang_key}' ({kind})")
+                        return cues, lang_key
+        except Exception as e:
+            print(f"[Warning] Failed to fetch subtitles for {lang_key}: {e}")
 
-    return []
+    return [], "none"
 
 
 def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]]:
@@ -151,9 +172,13 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
     return deduped
 
 
-def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_audio.mp3") -> Dict[str, Any]:
-    """Download audio as MP3 and probe video subtitle metadata."""
-    emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}'...")
+def download_youtube_audio(
+    query_or_url: str,
+    output_audio_path: str = "temp_audio.mp3",
+    target_lang: str = "auto"
+) -> Dict[str, Any]:
+    """Download audio as MP3 and probe video subtitle metadata in requested language."""
+    emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}' (Language: {target_lang})...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
     if os.path.exists(output_audio_path):
@@ -195,7 +220,7 @@ def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_aud
         "fragment_retries": 3,
     }
 
-    emit_progress("ytdlp_downloading", 35, "Extracting audio track and fetching captions...")
+    emit_progress("ytdlp_downloading", 35, f"Extracting audio track and fetching captions in '{target_lang}'...")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(search_target, download=True)
@@ -209,13 +234,14 @@ def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_aud
     if not os.path.exists(expected_audio) and os.path.exists(output_audio_path):
         expected_audio = output_audio_path
 
-    cues = fetch_direct_youtube_subtitles(video_info)
+    cues, matched_lang = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
-    emit_progress("ytdlp_done", 55, f"Audio & captions ready: '{title}' ({len(cues)} lines)", {
+    emit_progress("ytdlp_done", 55, f"Audio & captions ready: '{title}' ({len(cues)} lines, lang: {matched_lang})", {
         "title": title,
         "duration": duration,
         "uploader": uploader,
         "audio_path": expected_audio,
+        "matched_lang": matched_lang,
         "cues_count": len(cues)
     })
 
@@ -224,6 +250,7 @@ def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_aud
         "duration": duration,
         "uploader": uploader,
         "audio_path": expected_audio,
+        "matched_lang": matched_lang,
         "cues": cues
     }
 
@@ -399,12 +426,17 @@ def generate_lyric_video(
     offset_seconds: float = 0.0,
     aspect_ratio: str = "portrait",
     font_name: str = "Impact",
-    font_size: Optional[int] = None
+    font_size: Optional[int] = None,
+    lang: str = "auto"
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Portrait and Font Customization."""
-    emit_progress("init", 5, f"Initiating YouTube Lyric Video Generator ({aspect_ratio}, Font: {font_name})...")
+    """Main generator pipeline supporting Portrait, Font Customization, and Subtitle Language."""
+    emit_progress("init", 5, f"Initiating YouTube Lyric Video Generator ({aspect_ratio}, Font: {font_name}, Lang: {lang})...")
 
-    yt_data = download_youtube_audio(query_or_url=song_query, output_audio_path=temp_audio_path)
+    yt_data = download_youtube_audio(
+        query_or_url=song_query,
+        output_audio_path=temp_audio_path,
+        target_lang=lang
+    )
     audio_path = yt_data["audio_path"]
     duration = yt_data["duration"] or get_audio_duration(audio_path)
 
@@ -437,6 +469,7 @@ def generate_lyric_video(
         "duration": duration,
         "aspect_ratio": aspect_ratio,
         "font_name": font_name,
+        "language": yt_data.get("matched_lang", lang),
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
         "rawLrc": raw_lrc
@@ -455,6 +488,7 @@ if __name__ == "__main__":
     aspect = "portrait"
     font = "Impact"
     size = None
+    lang = "auto"
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -471,6 +505,8 @@ if __name__ == "__main__":
                 size = int(a.split("=")[1])
             except ValueError:
                 pass
+        elif a.startswith("--lang="):
+            lang = a.split("=")[1].strip()
 
     res = generate_lyric_video(
         song_query=query,
@@ -478,7 +514,8 @@ if __name__ == "__main__":
         offset_seconds=offset,
         aspect_ratio=aspect,
         font_name=font,
-        font_size=size
+        font_size=size,
+        lang=lang
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

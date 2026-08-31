@@ -59,7 +59,7 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str 
             if k != "live_chat":
                 candidate_langs.append(("manual", k, v))
 
-        # 2. Second priority: Original spoken audio auto-caption (e.g. 'en-orig', 'hi-orig', 'pa-orig')
+        # 2. Second priority: Original spoken audio auto-caption (e.g. 'en-orig', 'pa-orig')
         for k, v in auto_captions_dict.items():
             if k.endswith("-orig") or "orig" in k:
                 candidate_langs.append(("auto_orig", k, v))
@@ -75,21 +75,27 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str 
                 candidate_langs.append(("auto_fallback", k, v))
 
     else:
-        # User specified a specific language code (e.g. 'en', 'es', 'hi', 'pa', 'ja')
+        # User specified a specific language code (e.g. 'pa', 'en', 'es', 'hi', 'ja')
+        # Check aliases: pa / punjabi / panjabi
+        aliases = [lang_pref]
+        if lang_pref in ["pa", "punjabi", "panjabi"]:
+            aliases = ["pa", "punjabi", "panjabi", "pam"]
+        elif lang_pref in ["hi", "hindi"]:
+            aliases = ["hi", "hindi"]
+        elif lang_pref in ["es", "spanish"]:
+            aliases = ["es", "spa", "spanish"]
+
         # 1. Match in manual subtitles
         for k, v in subtitles_dict.items():
-            if k != "live_chat" and (k.lower().startswith(lang_pref) or lang_pref in k.lower()):
+            if k != "live_chat" and any(a in k.lower() for a in aliases):
                 candidate_langs.append(("manual_target", k, v))
 
         # 2. Match in auto-captions
         for k, v in auto_captions_dict.items():
-            if k != "live_chat" and (k.lower().startswith(lang_pref) or lang_pref in k.lower()):
+            if k != "live_chat" and any(a in k.lower() for a in aliases):
                 candidate_langs.append(("auto_target", k, v))
 
-        # 3. Fallback to original or English
-        for k, v in auto_captions_dict.items():
-            if k.endswith("-orig") or k.startswith("en"):
-                candidate_langs.append(("fallback_orig", k, v))
+        # DO NOT fallback to hi-orig or arbitrary languages when user asked for a specific language!
 
     for kind, lang_key, formats in candidate_langs:
         json3_fmt = next((f for f in formats if f.get("ext") == "json3"), None)

@@ -12,43 +12,57 @@ Style: Default,Impact,62,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,10
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:06.08,0:00:15.52,Default,,0,0,0,,गल सुन ल लारिया वे आ लोक मेरे ते हस दे
-Dialogue: 0,0:00:11.28,0:00:19.64,Default,,0,0,0,,पैसे ज्याद दे दूंगी मैचिंग कर दगा तो दस
-Dialogue: 0,0:00:15.52,0:00:24.80,Default,,0,0,0,,दे सोन ला रि सेम चाहि दी आला फोटो ब
-Dialogue: 0,0:00:19.64,0:00:24.80,Default,,0,0,0,,फरारी लाल दी चुन्नी मेरी रंग दे
-Dialogue: 0,0:00:25.40,0:00:33.60,Default,,0,0,0,,लारिया वे चुन्नी मेरी रंग दे लरिया मेरे
-Dialogue: 0,0:00:29.40,0:00:37.92,Default,,0,0,0,,यार गडी दे नाल दी चुन्नी मेरी रंग दे लला
-Dialogue: 0,0:00:33.60,0:00:40.88,Default,,0,0,0,,आवे मेरे यार दी गड्डी दे नाल दी ता पंगे
-Dialogue: 0,0:00:37.92,0:00:44.88,Default,,0,0,0,,लग देया उन चंगे लग देया ताही सोचा कुंडला
-Dialogue: 0,0:00:40.88,0:00:48.72,Default,,0,0,0,,पवा लवा सोचा शरे आम हो जा सोच दिया नामदा
-Dialogue: 0,0:00:44.88,0:00:51.44,Default,,0,0,0,,गोटी उते टटू बनवा लवा सोच दी फटाल दी मैं
-Dialogue: 0,0:00:48.72,0:00:56.04,Default,,0,0,0,,फैंटम दे नाल दी मैं एक होर कुड़ती सवा
-Dialogue: 0,0:00:51.44,0:01:00.12,Default,,0,0,0,,लवा नू देख के ता मेरी हो जावे उम्र वदी
-Dialogue: 0,0:00:56.04,0:01:03.92,Default,,0,0,0,,दे नाल दी वे चुन्नी मेरी रंग दे लारिया
-Dialogue: 0,0:01:00.12,0:01:09.00,Default,,0,0,0,,मेरे यार द गडी दे नाल दी चुन्नी मेरी रंग
-Dialogue: 0,0:01:03.92,0:01:09.00,Default,,0,0,0,,दे लारिया रे मेरे यार द गडी दे नाल
-Dialogue: 0,0:01:10.38,0:01:15.47,Default,,0,0,0,,[संगीत]
-Dialogue: 0,0:01:17.40,0:01:24.84,Default,,0,0,0,,दी मेरे ले देख ले कुड़िया कवाया ने देखी
-Dialogue: 0,0:01:21.48,0:01:29.36,Default,,0,0,0,,दुपट्टे तेरे विक दे इनी सोनी चुन्नी लगे
-Dialogue: 0,0:01:24.84,0:01:32.84,Default,,0,0,0,,जट्टी तेनू जद व देखे गाना लिख दे कमन
-Dialogue: 0,0:01:29.36,0:01:37.44,Default,,0,0,0,,बड़े नरे को कड़ नाले हले मैं सोरा गड़ा
-Dialogue: 0,0:01:32.84,0:01:41.96,Default,,0,0,0,,मारना आदा प्यार होना दीदार जज नाल हुई
-Dialogue: 0,0:01:37.44,0:01:45.52,Default,,0,0,0,,मैं तयार ना डर लगदा ना किथे रह जावा सदी
-Dialogue: 0,0:01:41.96,0:01:49.72,Default,,0,0,0,,ना सदी दे नाल दी वे चुन्नी मेरी रंग दे
-Dialogue: 0,0:01:45.52,0:01:55.44,Default,,0,0,0,,लारिया मेरे यार द डडी दे नाल द चुन्नी
-Dialogue: 0,0:01:49.72,0:01:55.44,Default,,0,0,0,,मेरी रंग दे लारिया मेरे यार द डडी दे नाल
-Dialogue: 0,0:01:56.16,0:02:03.80,Default,,0,0,0,,द
-Dialogue: 0,0:01:58.84,0:02:08.44,Default,,0,0,0,,आर यार द घ दे नाल द मेरी यार द घ दे नाल
-Dialogue: 0,0:02:03.80,0:02:12.96,Default,,0,0,0,,द ओ जली न लर मेरी हो जावे घर द गडी दे
-Dialogue: 0,0:02:08.44,0:02:16.36,Default,,0,0,0,,नाल द चुन्नी मेरी रंग दे लरिया मेरे यार
-Dialogue: 0,0:02:12.96,0:02:19.36,Default,,0,0,0,,द गड्डी दे नाल द चुन्नी मेरी रक दे
-Dialogue: 0,0:02:16.36,0:02:22.92,Default,,0,0,0,,लारिया हा मेरी आरती टी
-Dialogue: 0,0:02:19.36,0:02:24.52,Default,,0,0,0,,दे चुन्नी मेरी रंक दे लारिया हा मेरी
-Dialogue: 0,0:02:22.92,0:02:28.96,Default,,0,0,0,,आरती टी दे
-Dialogue: 0,0:02:24.52,0:02:31.76,Default,,0,0,0,,ना चुनी मेरी ले लारिया दे मेरे यार द घ
-Dialogue: 0,0:02:28.96,0:02:31.76,Default,,0,0,0,,दे नाल
-Dialogue: 0,0:02:32.30,0:02:38.10,Default,,0,0,0,,[संगीत]
-Dialogue: 0,0:02:38.20,0:02:45.20,Default,,0,0,0,,वे चुन्नी मेरी रंग दे लला रिया मेरे यार
-Dialogue: 0,0:02:41.48,0:02:49.80,Default,,0,0,0,,द गडी दे नाल दी चुन्नी मेरी रंग दे लला
-Dialogue: 0,0:02:45.20,0:02:49.80,Default,,0,0,0,,रिया वे मेरे यार द गडी दे नाल
-Dialogue: 0,0:02:49.88,0:02:52.88,Default,,0,0,0,,दी
+Dialogue: 0,0:00:05.00,0:00:07.85,Default,,0,0,0,,Gal sun lallaria ve
+Dialogue: 0,0:00:08.00,0:00:10.85,Default,,0,0,0,,Ah lok mere te hasde
+Dialogue: 0,0:00:11.00,0:00:13.85,Default,,0,0,0,,Paise jyada dedugi
+Dialogue: 0,0:00:14.00,0:00:16.85,Default,,0,0,0,,Matching krdega ta dsde
+Dialogue: 0,0:00:17.00,0:00:19.85,Default,,0,0,0,,Sunla ve dito same chahidi
+Dialogue: 0,0:00:20.00,0:00:22.85,Default,,0,0,0,,Ah le photo ve Ferrari laal di
+Dialogue: 0,0:00:23.00,0:00:25.85,Default,,0,0,0,,Chunni meri rangde lallaria
+Dialogue: 0,0:00:26.00,0:00:28.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
+Dialogue: 0,0:00:29.00,0:00:31.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:00:32.00,0:00:34.85,Default,,0,0,0,,Chunni meri rangde lallaria
+Dialogue: 0,0:00:35.00,0:00:37.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:00:38.00,0:00:40.85,Default,,0,0,0,,Oda pange lagde a
+Dialogue: 0,0:00:41.00,0:00:43.85,Default,,0,0,0,,Ohnu change lagde a
+Dialogue: 0,0:00:44.00,0:00:46.85,Default,,0,0,0,,Tahi socha kundla pvaalva
+Dialogue: 0,0:00:47.00,0:00:49.85,Default,,0,0,0,,Socha shareaamm hoja
+Dialogue: 0,0:00:50.00,0:00:52.85,Default,,0,0,0,,Sochdi aan naam ohda
+Dialogue: 0,0:00:53.00,0:00:55.85,Default,,0,0,0,,Gutt te tatto bnwalava
+Dialogue: 0,0:00:56.00,0:00:58.85,Default,,0,0,0,,Sochdi fer taaldi mai
+Dialogue: 0,0:00:59.00,0:01:01.85,Default,,0,0,0,,Phantom de nal di mai
+Dialogue: 0,0:01:02.00,0:01:04.85,Default,,0,0,0,,Ik hor kurti svaalva
+Dialogue: 0,0:01:05.00,0:01:07.85,Default,,0,0,0,,Ohnu dekh ke ta Meri hojve
+Dialogue: 0,0:01:08.00,0:01:10.85,Default,,0,0,0,,Meri umr vdhi de nal di
+Dialogue: 0,0:01:11.00,0:01:13.85,Default,,0,0,0,,Ve chunni mеri rangde lallaria
+Dialogue: 0,0:01:14.00,0:01:16.85,Default,,0,0,0,,Mere yaar di gaddi dе naal di
+Dialogue: 0,0:01:17.00,0:01:19.85,Default,,0,0,0,,Chunni meri rangde lallaria
+Dialogue: 0,0:01:20.00,0:01:22.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:01:23.00,0:01:25.85,Default,,0,0,0,,Mere laye dekhle je kudiye kwaria ne dekhi ve duppate tere vikdee
+Dialogue: 0,0:01:26.00,0:01:28.85,Default,,0,0,0,,Eni sohni chunni lagge jatti te lyi k menu Jdo oho dekhe gaana likhde
+Dialogue: 0,0:01:29.00,0:01:31.85,Default,,0,0,0,,Kam menu bde
+Dialogue: 0,0:01:32.00,0:01:34.85,Default,,0,0,0,,Saneaare kolo karhe
+Dialogue: 0,0:01:35.00,0:01:37.85,Default,,0,0,0,,Nale hle mai Sephora geda marna
+Dialogue: 0,0:01:38.00,0:01:40.85,Default,,0,0,0,,Aunda ae pyar ohda
+Dialogue: 0,0:01:41.00,0:01:43.85,Default,,0,0,0,,Hona ae deedar ohda
+Dialogue: 0,0:01:44.00,0:01:46.85,Default,,0,0,0,,Chaj nal hoi mai tyaar na
+Dialogue: 0,0:01:47.00,0:01:49.85,Default,,0,0,0,,Dar lgda na kite rehjva
+Dialogue: 0,0:01:50.00,0:01:52.85,Default,,0,0,0,,Saddi na saddi de nal de
+Dialogue: 0,0:01:53.00,0:01:55.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
+Dialogue: 0,0:01:56.00,0:01:58.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:01:59.00,0:02:01.85,Default,,0,0,0,,Chunni meri rangde lallaria
+Dialogue: 0,0:02:02.00,0:02:04.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:05.00,0:02:07.85,Default,,0,0,0,,(Ve chunni meri rangde lallaria
+Dialogue: 0,0:02:08.00,0:02:10.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:11.00,0:02:13.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:14.00,0:02:16.85,Default,,0,0,0,,Mere yaar di gaddi de naal di)
+Dialogue: 0,0:02:17.00,0:02:19.85,Default,,0,0,0,,Aujle nu lor meri hojave
+Dialogue: 0,0:02:20.00,0:02:22.85,Default,,0,0,0,,Ghar di kaddi de naal di
+Dialogue: 0,0:02:23.00,0:02:25.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
+Dialogue: 0,0:02:26.00,0:02:28.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:29.00,0:02:31.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
+Dialogue: 0,0:02:32.00,0:02:34.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:35.00,0:02:37.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
+Dialogue: 0,0:02:38.00,0:02:40.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:02:41.00,0:02:43.85,Default,,0,0,0,,Chunni meri rangde lallaria ve
+Dialogue: 0,0:02:44.00,0:02:46.85,Default,,0,0,0,,Mere yaar di gaddi de naal di

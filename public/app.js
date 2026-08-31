@@ -7,10 +7,7 @@ const state = {
   syncedLines: [],
   currentLineIndex: -1,
   currentBackdrop: 'black',
-  generationOffset: 0.0,
-  aspectRatio: 'portrait',
-  fontFamily: 'Impact',
-  language: 'auto',
+  template: 'template1',
 };
 
 // DOM Elements
@@ -18,13 +15,7 @@ const generatorForm = document.getElementById('generator-form');
 const songQueryInput = document.getElementById('song-query-input');
 const generateBtn = document.getElementById('generate-btn');
 const btnText = document.getElementById('btn-text');
-const presetChips = document.querySelectorAll('.preset-chip');
-const offsetChips = document.querySelectorAll('.offset-chip');
-const aspectBtns = document.querySelectorAll('#aspect-ratio-group .pill-btn');
-const fontBtns = document.querySelectorAll('#font-group .font-pill');
-const customFontInput = document.getElementById('custom-font-input');
-const langBtns = document.querySelectorAll('#lang-group .lang-pill');
-const customLangInput = document.getElementById('custom-lang-input');
+const templatePills = document.querySelectorAll('#template-group .template-pill');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -93,75 +84,13 @@ function setupEventListeners() {
     }
   });
 
-  // Preset chips
-  presetChips.forEach((chip) => {
-    chip.addEventListener('click', () => {
-      songQueryInput.value = chip.dataset.query;
-      startGenerationPipeline(chip.dataset.query);
-    });
-  });
-
-  // Aspect Ratio Selection (Portrait 9:16 vs Landscape 16:9)
-  aspectBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      aspectBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.aspectRatio = btn.dataset.aspect;
-      showToast(`Orientation set to ${btn.dataset.aspect.toUpperCase()}`);
-    });
-  });
-
-  // Font Selection
-  fontBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      fontBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.fontFamily = btn.dataset.font;
-      if (customFontInput) customFontInput.value = '';
-      showToast(`Font set to ${btn.dataset.font}`);
-    });
-  });
-
-  // Custom Font Input
-  if (customFontInput) {
-    customFontInput.addEventListener('input', (e) => {
-      const val = e.target.value.trim();
-      if (val) {
-        fontBtns.forEach(b => b.classList.remove('active'));
-        state.fontFamily = val;
-      }
-    });
-  }
-
-  // Language Selection
-  langBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      langBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      state.language = btn.dataset.lang;
-      if (customLangInput) customLangInput.value = '';
-      showToast(`Language set to ${btn.textContent.trim()}`);
-    });
-  });
-
-  // Custom Language Input
-  if (customLangInput) {
-    customLangInput.addEventListener('input', (e) => {
-      const val = e.target.value.trim().toLowerCase();
-      if (val) {
-        langBtns.forEach(b => b.classList.remove('active'));
-        state.language = val;
-      }
-    });
-  }
-
-  // Offset chips
-  offsetChips.forEach((chip) => {
-    chip.addEventListener('click', () => {
-      offsetChips.forEach(c => c.classList.remove('active'));
-      chip.classList.add('active');
-      state.generationOffset = parseFloat(chip.dataset.offset) || 0.0;
-      showToast(`Timing offset set to ${chip.dataset.offset}s`);
+  // Template Selection (Template 1, 2, 3)
+  templatePills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      templatePills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      state.template = pill.dataset.template;
+      showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
     });
   });
 
@@ -197,8 +126,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with aspect ratio, font, and language parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}&aspect=${encodeURIComponent(state.aspectRatio)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}`;
+  // Connect to SSE Endpoint with template parameter
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -281,12 +210,12 @@ function handleGenerationComplete(data) {
 
   showToast('1080p MP4 Lyric Video Generated! 🚀');
 
-  const isPortrait = (data.metadata?.aspect_ratio || state.aspectRatio) === 'portrait';
-  const langUsed = data.metadata?.language || state.language;
+  const isPortrait = (data.metadata?.aspect_ratio || 'portrait') === 'portrait';
+  const tplUsed = (data.metadata?.template || state.template || 'template1').replace('template', 'Template ');
 
   // Populate Studio Stage
   stageSongTitle.textContent = data.metadata?.track_name || data.query;
-  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; Font: ${fontUsed} &bull; Lang: ${langUsed.toUpperCase()}`;
+  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; ${tplUsed.toUpperCase()}`;
 
   // Toggle Portrait frame styling on video container
   if (videoPreviewWrapper) {

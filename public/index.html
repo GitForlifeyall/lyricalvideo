@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LyricalVideo — Search & Fetch Song Lyrics (LRCLIB)</title>
+  <meta name="description" content="Search and fetch plain and synced LRC lyrics instantly using LRCLIB API.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="background-glow">
+    <div class="glow-circle glow-1"></div>
+    <div class="glow-circle glow-2"></div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V5l12-2v13"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="16" r="3"></circle>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">Lyrical<span>Finder</span></h1>
+          <p class="brand-subtitle">Powered by LRCLIB API &bull; Synced LRC & Plain Lyrics</p>
+        </div>
+      </div>
+      <div class="header-badges">
+        <span class="badge badge-accent">⚡ Instant Search</span>
+        <span class="badge badge-subtle">🎵 Synced LRC Ready</span>
+      </div>
+    </header>
+
+    <!-- Search Section -->
+    <section class="search-section">
+      <form id="search-form" class="search-form">
+        <div class="search-bar-wrapper">
+          <div class="search-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"></circle>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+          </div>
+          <input
+            type="text"
+            id="song-input"
+            class="search-input"
+            placeholder="Enter song name (e.g., Bohemian Rhapsody, Blinding Lights...)"
+            autocomplete="off"
+            required
+          />
+          <button type="button" id="clear-btn" class="clear-btn" title="Clear input" style="display: none;">
+            &times;
+          </button>
+          <button type="submit" id="search-btn" class="search-btn">
+            <span>Search Lyrics</span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="5" y1="12" x2="19" y2="12"></line>
+              <polyline points="12 5 19 12 12 19"></polyline>
+            </svg>
+          </button>
+        </div>
+      </form>
+
+      <!-- Quick Suggested Searches -->
+      <div class="quick-tags">
+        <span class="quick-title">Popular:</span>
+        <button class="tag-btn" data-query="Bohemian Rhapsody">Bohemian Rhapsody</button>
+        <button class="tag-btn" data-query="Blinding Lights">Blinding Lights</button>
+        <button class="tag-btn" data-query="Hotel California">Hotel California</button>
+        <button class="tag-btn" data-query="Shape of You">Shape of You</button>
+        <button class="tag-btn" data-query="Believer">Believer</button>
+      </div>
+    </section>
+
+    <!-- Main Content Area -->
+    <main class="main-layout" id="main-layout">
+      <!-- Left Column: Search Results List -->
+      <aside class="results-sidebar" id="results-sidebar" style="display: none;">
+        <div class="sidebar-header">
+          <h2 class="sidebar-title">Search Results</h2>
+          <span id="results-count" class="badge badge-subtle">0 matches</span>
+        </div>
+        <div id="results-list" class="results-list">
+          <!-- Dynamic cards injected here -->
+        </div>
+      </aside>
+
+      <!-- Right/Main Column: Lyrics Display Container -->
+      <section class="lyrics-card" id="lyrics-card">
+        <!-- Initial Blank / Guide State -->
+        <div id="empty-state" class="empty-state">
+          <div class="empty-icon-wrap">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 18V5l12-2v13"></path>
+              <circle cx="6" cy="18" r="3"></circle>
+              <circle cx="18" cy="16" r="3"></circle>
+            </svg>
+          </div>
+          <h3>Find lyrics for any track</h3>
+          <p>Type a song name above or click one of the popular suggestions to fetch both synchronized time-stamped (.LRC) and plain lyrics.</p>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading-state" class="loading-state" style="display: none;">
+          <div class="spinner"></div>
+          <p class="loading-text">Fetching lyrics from LRCLIB...</p>
+        </div>
+
+        <!-- Error State -->
+        <div id="error-state" class="error-state" style="display: none;">
+          <div class="error-icon">⚠️</div>
+          <h3 id="error-title">No Lyrics Found</h3>
+          <p id="error-message">We couldn't find lyrics matching your query. Try searching with track and artist name.</p>
+        </div>
+
+        <!-- Populated Lyrics View -->
+        <div id="content-view" class="content-view" style="display: none;">
+          <!-- Song Metadata Header -->
+          <div class="song-header">
+            <div class="song-artwork">
+              <div class="vinyl-disk" id="vinyl-disk">
+                <div class="vinyl-center"></div>
+              </div>
+            </div>
+            <div class="song-details">
+              <div class="song-badge-row">
+                <span id="synced-badge" class="badge badge-accent">⏱️ Synced LRC</span>
+                <span id="duration-badge" class="badge badge-subtle">⏱️ 0:00</span>
+                <span id="instrumental-badge" class="badge badge-warning" style="display: none;">Instrumental</span>
+              </div>
+              <h2 id="song-title" class="song-title">Song Title</h2>
+              <p id="song-artist" class="song-artist">Artist Name</p>
+              <p id="song-album" class="song-album">Album Name</p>
+            </div>
+          </div>
+
+          <!-- Controls and Tabs -->
+          <div class="view-controls">
+            <div class="tab-group" role="tablist">
+              <button class="tab-btn active" id="tab-karaoke" data-tab="karaoke">
+                🎤 Karaoke View
+              </button>
+              <button class="tab-btn" id="tab-plain" data-tab="plain">
+                📝 Plain Text
+              </button>
+              <button class="tab-btn" id="tab-lrc" data-tab="lrc">
+                ⏱️ Raw LRC
+              </button>
+            </div>
+
+            <div class="action-buttons">
+              <!-- Karaoke Simulation Controls -->
+              <div id="karaoke-controls" class="karaoke-controls">
+                <button id="karaoke-play-btn" class="action-btn" title="Simulate karaoke scroll playback">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <span id="play-btn-text">Simulate Play</span>
+                </button>
+                <button id="karaoke-reset-btn" class="action-btn" title="Reset karaoke">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="1 4 1 10 7 10"></polyline>
+                    <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+                  </svg>
+                </button>
+              </div>
+
+              <button id="copy-btn" class="action-btn" title="Copy lyrics to clipboard">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+                <span>Copy</span>
+              </button>
+
+              <button id="download-btn" class="action-btn action-btn-primary" title="Download lyrics file">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
+                </svg>
+                <span>Download</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Lyrics Display Panes -->
+          <div class="lyrics-body-container">
+            <!-- 1. Karaoke / Timestamped List Pane -->
+            <div id="pane-karaoke" class="lyrics-pane active">
+              <div id="karaoke-lines" class="karaoke-lines">
+                <!-- Injected synchronized lines -->
+              </div>
+            </div>
+
+            <!-- 2. Plain Text Pane -->
+            <div id="pane-plain" class="lyrics-pane">
+              <pre id="plain-lyrics-text" class="plain-lyrics-text"></pre>
+            </div>
+
+            <!-- 3. Raw LRC Pane -->
+            <div id="pane-lrc" class="lyrics-pane">
+              <pre id="raw-lrc-text" class="raw-lrc-text"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+      <span id="toast-message">Copied to clipboard!</span>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -1,22 +1,31 @@
 """
 YouTube-Powered 1080p Transparent Lyric-Video Overlay Generator in Python
-Uses yt-dlp to extract both audio (MP3) and synchronized subtitles/captions (VTT) directly from YouTube.
+Uses yt-dlp to extract high-quality audio and fetches direct YouTube timedtext subtitles
+without triggering HTTP 429 rate-limiting.
 Renders a 1080p 30fps VP9 yuva420p transparent video overlay using FFmpeg.
 """
 
 import os
 import re
 import sys
-import glob
 import json
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
+import requests
 import yt_dlp
 
 # Check if JSON progress mode is enabled
 JSON_MODE = "--json-progress" in sys.argv
+
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Accept": "*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://www.youtube.com",
+    "Referer": "https://www.youtube.com/",
+}
 
 
 def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[str, Any]] = None):
@@ -34,21 +43,134 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
         print(f"[{percent}% - {step}] {message}", flush=True)
 
 
-def download_youtube_audio_and_subtitles(
-    query_or_url: str,
-    output_audio_path: str = "temp_audio.mp3",
-    output_vtt_prefix: str = "temp_subs"
-) -> Dict[str, Any]:
+def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[float, float, str]]:
     """
-    Use yt-dlp to extract the audio track as MP3 and the best synchronized subtitle/caption stream.
+    Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET
+    to prevent yt-dlp's internal subtitle downloader from triggering HTTP 429 rate limits.
+    """
+    subtitles_dict = video_info.get("subtitles", {})
+    auto_captions_dict = video_info.get("automatic_captions", {})
+
+    # Priority order for language keys: manual English, auto English, then any available
+    candidate_langs = []
+    for k in subtitles_dict.keys():
+        if k.startswith("en") and k != "live_chat":
+            candidate_langs.append(("manual", k, subtitles_dict[k]))
+    for k in auto_captions_dict.keys():
+        if k.startswith("en") and k != "live_chat":
+            candidate_langs.append(("auto", k, auto_captions_dict[k]))
+    for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
+        if k != "live_chat" and k not in [c[1] for c in candidate_langs]:
+            candidate_langs.append(("fallback", k, v))
+
+    for kind, lang_key, formats in candidate_langs:
+        # Prefer json3 format for precision, then vtt
+        json3_fmt = next((f for f in formats if f.get("ext") == "json3"), None)
+        vtt_fmt = next((f for f in formats if f.get("ext") == "vtt"), None)
+        chosen_fmt = json3_fmt or vtt_fmt or (formats[0] if formats else None)
+
+        if not chosen_fmt or not chosen_fmt.get("url"):
+            continue
+
+        try:
+            url = chosen_fmt["url"]
+            resp = requests.get(url, headers=BROWSER_HEADERS, timeout=10)
+            if resp.status_code == 200 and resp.text.strip():
+                if chosen_fmt.get("ext") == "json3" or "json3" in url:
+                    data = resp.json()
+                    cues = parse_json3_timedtext(data)
+                    if cues:
+                        print(f"[Subtitles] Successfully fetched {len(cues)} cues from YouTube ({kind} - {lang_key})")
+                        return cues
+                else:
+                    cues = parse_vtt_text(resp.text)
+                    if cues:
+                        print(f"[Subtitles] Successfully parsed {len(cues)} VTT cues from YouTube ({kind} - {lang_key})")
+                        return cues
+        except Exception as e:
+            print(f"[Warning] Failed to fetch subtitles for {lang_key}: {e}")
+
+    return []
+
+
+def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]]:
+    """Parse YouTube JSON3 timedtext structure into list of (start_sec, end_sec, text)."""
+    events = data.get("events", [])
+    cues: List[Tuple[float, float, str]] = []
+
+    for ev in events:
+        t_start = ev.get("tStartMs", 0) / 1000.0
+        t_dur = ev.get("dDurationMs", 0) / 1000.0
+        segs = ev.get("segs", [])
+        
+        # Combine word segments
+        raw_text = "".join([s.get("utf8", "") for s in segs if s.get("utf8")])
+        clean_text = raw_text.replace("\n", " ").strip()
+        clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
+        clean_text = " ".join(clean_text.split())
+
+        if clean_text and clean_text != "\n":
+            end_sec = max(t_start + 1.0, t_start + t_dur)
+            cues.append((t_start, end_sec, clean_text))
+
+    # Deduplicate consecutive identical lines
+    deduped: List[Tuple[float, float, str]] = []
+    for c in cues:
+        if deduped and deduped[-1][2].lower() == c[2].lower():
+            deduped[-1] = (deduped[-1][0], max(deduped[-1][1], c[1]), deduped[-1][2])
+        else:
+            deduped.append(c)
+
+    return deduped
+
+
+def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
+    """Parse WebVTT content into list of (start_sec, end_sec, text)."""
+    cue_pattern = re.compile(
+        r"(?:(\d{2}:)?(\d{2}):(\d{2})\.(\d{3}))\s*-->\s*(?:(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})).*?\n((?:(?!\n\n|\r\n\r\n|\d{2}:).)*)",
+        re.DOTALL
+    )
+    cues = []
+    for match in cue_pattern.finditer(content):
+        h1 = int(match.group(1).replace(":", "")) if match.group(1) else 0
+        m1 = int(match.group(2))
+        s1 = int(match.group(3))
+        ms1 = int(match.group(4))
+        start_sec = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
+
+        h2 = int(match.group(5).replace(":", "")) if match.group(5) else 0
+        m2 = int(match.group(6))
+        s2 = int(match.group(7))
+        ms2 = int(match.group(8))
+        end_sec = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
+
+        clean_text = re.sub(r"<[^>]+>", "", match.group(9).strip())
+        clean_text = " ".join(clean_text.split())
+        clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
+
+        if clean_text:
+            cues.append((start_sec, end_sec, clean_text))
+
+    deduped: List[Tuple[float, float, str]] = []
+    for c in cues:
+        if deduped and deduped[-1][2].lower() == c[2].lower():
+            deduped[-1] = (deduped[-1][0], max(deduped[-1][1], c[1]), deduped[-1][2])
+        else:
+            deduped.append(c)
+
+    return deduped
+
+
+def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_audio.mp3") -> Dict[str, Any]:
+    """
+    Download audio as MP3 and probe video subtitle metadata without triggering yt-dlp 429 errors.
     """
     emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}'...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
-    # Clean previous temp files
-    for old_file in glob.glob(f"{output_vtt_prefix}*") + [output_audio_path]:
+    if os.path.exists(output_audio_path):
         try:
-            os.remove(old_file)
+            os.remove(output_audio_path)
         except OSError:
             pass
 
@@ -60,59 +182,9 @@ def download_youtube_audio_and_subtitles(
     )
     search_target = query_or_url if is_direct_url else f"ytsearch1:{query_or_url}"
 
-    probe_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["mweb", "android", "web", "ios"]
-            }
-        },
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        }
-    }
-
-    with yt_dlp.YoutubeDL(probe_opts) as ydl:
-        info = ydl.extract_info(search_target, download=False)
-        video_info = info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
-
-    video_url = video_info.get("webpage_url") or f"https://www.youtube.com/watch?v={video_info.get('id')}"
-    title = video_info.get("title", query_or_url)
-    duration = video_info.get("duration") or 0.0
-    uploader = video_info.get("uploader") or video_info.get("channel") or "YouTube"
-
-    # Identify best subtitle language key to prevent downloading dozens of auto-translated languages
-    subtitles_dict = video_info.get("subtitles", {})
-    auto_captions_dict = video_info.get("automatic_captions", {})
-    
-    target_lang = None
-    # 1. Check manual creator subtitles for English
-    for lang in subtitles_dict.keys():
-        if lang.startswith("en") and lang != "live_chat":
-            target_lang = lang
-            break
-    # 2. Check auto-captions for English
-    if not target_lang:
-        for lang in auto_captions_dict.keys():
-            if lang.startswith("en") and lang != "live_chat":
-                target_lang = lang
-                break
-    # 3. Check any available language
-    if not target_lang:
-        available_langs = [l for l in list(subtitles_dict.keys()) + list(auto_captions_dict.keys()) if l != "live_chat"]
-        if available_langs:
-            target_lang = available_langs[0]
-
-    emit_progress("ytdlp_downloading", 35, f"Downloading audio and captions ({target_lang or 'auto'})...")
-
-    ydl_download_opts = {
+    ydl_opts = {
         "format": "bestaudio/best",
-        "outtmpl": {
-            "default": f"{audio_basename}.%(ext)s",
-            "subtitle": f"{output_vtt_prefix}.%(ext)s",
-        },
+        "outtmpl": f"{audio_basename}.%(ext)s",
         "postprocessors": [
             {
                 "key": "FFmpegExtractAudio",
@@ -123,41 +195,41 @@ def download_youtube_audio_and_subtitles(
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "writesubtitles": False,       # Handled directly via HTTP GET to avoid 429
+        "writeautomaticsub": False,
         "extractor_args": {
             "youtube": {
                 "player_client": ["mweb", "android", "web", "ios"]
             }
         },
-        "http_headers": {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-        },
+        "http_headers": BROWSER_HEADERS,
         "retries": 3,
         "fragment_retries": 3,
     }
 
-    if target_lang:
-        ydl_download_opts["writesubtitles"] = True
-        ydl_download_opts["writeautomaticsub"] = True
-        ydl_download_opts["subtitlesformat"] = "vtt"
-        ydl_download_opts["subtitleslangs"] = [target_lang]
+    emit_progress("ytdlp_downloading", 35, "Extracting audio track and fetching captions...")
 
-    with yt_dlp.YoutubeDL(ydl_download_opts) as ydl:
-        ydl.download([video_url])
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(search_target, download=True)
+        video_info = info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
+
+    title = video_info.get("title", query_or_url)
+    duration = video_info.get("duration") or 0.0
+    uploader = video_info.get("uploader") or video_info.get("channel") or "YouTube"
 
     expected_audio = f"{audio_basename}.mp3"
     if not os.path.exists(expected_audio) and os.path.exists(output_audio_path):
         expected_audio = output_audio_path
 
-    vtt_candidates = glob.glob(f"{output_vtt_prefix}*.vtt")
-    
-    emit_progress("ytdlp_done", 55, f"Audio & subtitles extracted: '{title}'", {
+    # Fetch subtitles directly via HTTP
+    cues = fetch_direct_youtube_subtitles(video_info)
+
+    emit_progress("ytdlp_done", 55, f"Audio & captions ready: '{title}' ({len(cues)} lines)", {
         "title": title,
         "duration": duration,
         "uploader": uploader,
         "audio_path": expected_audio,
-        "subtitles_count": len(vtt_candidates),
-        "target_lang": target_lang
+        "cues_count": len(cues)
     })
 
     return {
@@ -165,7 +237,7 @@ def download_youtube_audio_and_subtitles(
         "duration": duration,
         "uploader": uploader,
         "audio_path": expected_audio,
-        "vtt_files": vtt_candidates
+        "cues": cues
     }
 
 
@@ -186,79 +258,20 @@ def seconds_to_lrc_timestamp(total_seconds: float) -> str:
     return f"{m:02d}:{s:02d}.{cs:02d}"
 
 
-def parse_vtt_cues(vtt_path: str) -> List[Tuple[float, float, str]]:
-    """Parse WebVTT cues into (start_sec, end_sec, text) tuples with cleaning and deduplication."""
-    with open(vtt_path, "r", encoding="utf-8", errors="ignore") as f:
-        content = f.read()
-
-    # VTT timestamp regex: 00:00:12.345 --> 00:00:15.678 or 00:12.345 --> 00:15.678
-    cue_pattern = re.compile(
-        r"(?:(\d{2}:)?(\d{2}):(\d{2})\.(\d{3}))\s*-->\s*(?:(\d{2}:)?(\d{2}):(\d{2})\.(\d{3})).*?\n((?:(?!\n\n|\r\n\r\n|\d{2}:).)*)",
-        re.DOTALL
-    )
-
-    cues = []
-    for match in cue_pattern.finditer(content):
-        h1 = int(match.group(1).replace(":", "")) if match.group(1) else 0
-        m1 = int(match.group(2))
-        s1 = int(match.group(3))
-        ms1 = int(match.group(4))
-        start_sec = h1 * 3600 + m1 * 60 + s1 + ms1 / 1000.0
-
-        h2 = int(match.group(5).replace(":", "")) if match.group(5) else 0
-        m2 = int(match.group(6))
-        s2 = int(match.group(7))
-        ms2 = int(match.group(8))
-        end_sec = h2 * 3600 + m2 * 60 + s2 + ms2 / 1000.0
-
-        raw_text = match.group(9).strip()
-        # Clean HTML/VTT styling tags (<c>, <b>, <v ...>, etc.)
-        clean_text = re.sub(r"<[^>]+>", "", raw_text)
-        # Normalize whitespace and strip common caption artifacts
-        clean_text = " ".join(clean_text.split())
-        clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
-
-        if clean_text:
-            cues.append((start_sec, end_sec, clean_text))
-
-    # Deduplicate consecutive cues with duplicate text
-    deduped: List[Tuple[float, float, str]] = []
-    for c in cues:
-        if deduped and deduped[-1][2].lower() == c[2].lower():
-            # Extend end time of existing cue
-            deduped[-1] = (deduped[-1][0], max(deduped[-1][1], c[1]), deduped[-1][2])
-        else:
-            deduped.append(c)
-
-    return deduped
-
-
-def vtt_to_ass(
-    vtt_files: List[str],
+def build_ass_and_lrc_content(
+    cues: List[Tuple[float, float, str]],
     output_ass_path: str = "lyrics.ass",
     offset_seconds: float = 0.0,
     audio_duration: float = 180.0
 ) -> Tuple[str, List[Dict[str, Any]], str]:
-    """
-    Step 2: Convert parsed VTT subtitle cues to 1080p ASS subtitle format.
-    """
-    emit_progress("ass_start", 60, "Step 2: Formatting YouTube subtitles into 1080p ASS format...")
-
-    cues: List[Tuple[float, float, str]] = []
-    if vtt_files:
-        chosen_vtt = vtt_files[0]
-        for vf in vtt_files:
-            if "en" in vf:
-                chosen_vtt = vf
-                break
-        cues = parse_vtt_cues(chosen_vtt)
+    """Convert cues into 1080p ASS subtitle format and structured JSON timestamps."""
+    emit_progress("ass_start", 60, "Step 2: Formatting captions into 1080p ASS subtitle canvas...")
 
     if not cues:
         cues = [
-            (2.0, max(6.0, audio_duration - 2.0), "[Music Playing - YouTube Subtitles]")
+            (2.0, max(6.0, audio_duration - 2.0), "[Music Playing - Native YouTube Audio]")
         ]
 
-    # Build ASS header targeting 1920x1080 canvas
     ass_header = """[Script Info]
 ; Script generated by YouTube Lyric-Video Overlay Generator
 ScriptType: v4.00+
@@ -363,22 +376,15 @@ def generate_lyric_video(
     temp_ass_path: str = "lyrics.ass",
     offset_seconds: float = 0.0
 ) -> Dict[str, Any]:
-    """
-    Main generator pipeline powered 100% by yt-dlp & FFmpeg.
-    """
+    """Main generator pipeline."""
     emit_progress("init", 5, f"Initiating YouTube Audio & Subtitle Generator for '{song_query}'...")
 
-    yt_data = download_youtube_audio_and_subtitles(
-        query_or_url=song_query,
-        output_audio_path=temp_audio_path,
-        output_vtt_prefix="temp_subs"
-    )
-
+    yt_data = download_youtube_audio(query_or_url=song_query, output_audio_path=temp_audio_path)
     audio_path = yt_data["audio_path"]
     duration = yt_data["duration"] or get_audio_duration(audio_path)
 
-    ass_path, structured_lines, raw_lrc = vtt_to_ass(
-        vtt_files=yt_data["vtt_files"],
+    ass_path, structured_lines, raw_lrc = build_ass_and_lrc_content(
+        cues=yt_data["cues"],
         output_ass_path=temp_ass_path,
         offset_seconds=offset_seconds,
         audio_duration=duration

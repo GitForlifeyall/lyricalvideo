@@ -57,6 +57,7 @@ const resetBtn = document.getElementById('karaoke-reset-btn');
 
 const copyBtn = document.getElementById('copy-btn');
 const downloadBtn = document.getElementById('download-btn');
+const saveBackendBtn = document.getElementById('save-backend-btn');
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toast-message');
 
@@ -104,6 +105,11 @@ function setupEventListeners() {
       });
     }
   });
+
+  // Save to Backend Button
+  if (saveBackendBtn) {
+    saveBackendBtn.addEventListener('click', handleSaveToBackend);
+  }
 
   // Copy Button
   copyBtn.addEventListener('click', handleCopy);
@@ -401,6 +407,60 @@ function switchTab(tabKey) {
   if (panePlain) panePlain.classList.toggle('active', tabKey === 'plain');
   if (paneLrc) paneLrc.classList.toggle('active', tabKey === 'lrc');
   if (paneJson) paneJson.classList.toggle('active', tabKey === 'json');
+}
+
+// Save Time-Synced JSON to Backend Lyrics Folder
+async function handleSaveToBackend() {
+  if (!state.selectedTrack) {
+    showToast('Please select a song first!');
+    return;
+  }
+
+  const originalContent = saveBackendBtn.innerHTML;
+  saveBackendBtn.disabled = true;
+  saveBackendBtn.innerHTML = `
+    <span class="spinner" style="width:12px; height:12px; margin:0; border-width:2px; display:inline-block;"></span>
+    <span>Saving...</span>
+  `;
+
+  try {
+    const payload = {
+      track: {
+        ...state.selectedTrack,
+        syncedLines: state.parsedLrcLines
+      }
+    };
+
+    const res = await fetch('/api/lyrics/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.error || 'Failed to save on server');
+    }
+
+    showToast(`Saved to ${data.filePath}! (${data.totalLines} lines) 🎉`);
+    saveBackendBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="20 6 9 17 4 12"></polyline>
+      </svg>
+      <span>Saved!</span>
+    `;
+
+    setTimeout(() => {
+      saveBackendBtn.innerHTML = originalContent;
+      saveBackendBtn.disabled = false;
+    }, 2200);
+  } catch (err) {
+    console.error('Save to backend error:', err);
+    showToast(`Error: ${err.message}`);
+    saveBackendBtn.innerHTML = originalContent;
+    saveBackendBtn.disabled = false;
+  }
 }
 
 // Copy to Clipboard

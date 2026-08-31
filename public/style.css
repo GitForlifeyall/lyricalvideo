@@ -690,6 +690,19 @@ body {
   box-shadow: var(--shadow-glow);
 }
 
+.action-btn-accent {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.action-btn-accent:hover {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.7);
+  color: #ffffff;
+  box-shadow: 0 0 15px rgba(16, 185, 129, 0.3);
+}
+
 /* Lyrics Body Container */
 .lyrics-body-container {
   flex: 1;

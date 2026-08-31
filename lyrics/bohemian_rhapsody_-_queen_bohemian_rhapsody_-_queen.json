@@ -1,0 +1,414 @@
+{
+  "id": 30585262,
+  "trackName": "Bohemian Rhapsody - Queen",
+  "artistName": "Bohemian Rhapsody - Queen",
+  "albumName": "Bohemian Rhapsody - Queen",
+  "duration": 354,
+  "instrumental": false,
+  "hasSyncedLyrics": true,
+  "savedAt": "2026-08-31T18:34:29.183Z",
+  "totalLines": 57,
+  "syncedLines": [
+    {
+      "index": 0,
+      "timestamp": "00:00.42",
+      "timeSeconds": 0.42,
+      "timeMs": 420,
+      "text": "Is this the real life?"
+    },
+    {
+      "index": 1,
+      "timestamp": "00:04.03",
+      "timeSeconds": 4.03,
+      "timeMs": 4030,
+      "text": "Is this just fantasy?"
+    },
+    {
+      "index": 2,
+      "timestamp": "00:07.58",
+      "timeSeconds": 7.58,
+      "timeMs": 7580,
+      "text": "Caught in a landside"
+    },
+    {
+      "index": 3,
+      "timestamp": "00:10.35",
+      "timeSeconds": 10.35,
+      "timeMs": 10350,
+      "text": "No escape from reality"
+    },
+    {
+      "index": 4,
+      "timestamp": "00:14.74",
+      "timeSeconds": 14.74,
+      "timeMs": 14740,
+      "text": "Open your eyes"
+    },
+    {
+      "index": 5,
+      "timestamp": "00:17.70",
+      "timeSeconds": 17.7,
+      "timeMs": 17700,
+      "text": "Look up to the skies and see"
+    },
+    {
+      "index": 6,
+      "timestamp": "00:25.29",
+      "timeSeconds": 25.29,
+      "timeMs": 25290,
+      "text": "I'm just a poor boy, I need no sympathy"
+    },
+    {
+      "index": 7,
+      "timestamp": "00:31.02",
+      "timeSeconds": 31.02,
+      "timeMs": 31020,
+      "text": "Because I'm easy come, easy go"
+    },
+    {
+      "index": 8,
+      "timestamp": "00:35.39",
+      "timeSeconds": 35.39,
+      "timeMs": 35390,
+      "text": "Little high, little low"
+    },
+    {
+      "index": 9,
+      "timestamp": "00:38.75",
+      "timeSeconds": 38.75,
+      "timeMs": 38750,
+      "text": "Any way the wind blows doesn't really matter to me (to me)"
+    },
+    {
+      "index": 10,
+      "timestamp": "00:55.42",
+      "timeSeconds": 55.42,
+      "timeMs": 55420,
+      "text": "Mama"
+    },
+    {
+      "index": 11,
+      "timestamp": "00:58.41",
+      "timeSeconds": 58.41,
+      "timeMs": 58410,
+      "text": "Just killed a man"
+    },
+    {
+      "index": 12,
+      "timestamp": "01:01.92",
+      "timeSeconds": 61.92,
+      "timeMs": 61920,
+      "text": "Put a gun against his head, pulled my trigger"
+    },
+    {
+      "index": 13,
+      "timestamp": "01:06.59",
+      "timeSeconds": 66.59,
+      "timeMs": 66590,
+      "text": "Now he's dead"
+    },
+    {
+      "index": 14,
+      "timestamp": "01:09.27",
+      "timeSeconds": 69.27,
+      "timeMs": 69270,
+      "text": "Mama, life had just begun"
+    },
+    {
+      "index": 15,
+      "timestamp": "01:15.36",
+      "timeSeconds": 75.36,
+      "timeMs": 75360,
+      "text": "But now I've gone and thrown it all away"
+    },
+    {
+      "index": 16,
+      "timestamp": "01:22.64",
+      "timeSeconds": 82.64,
+      "timeMs": 82640,
+      "text": "Mama, oo-oo-oo"
+    },
+    {
+      "index": 17,
+      "timestamp": "01:29.21",
+      "timeSeconds": 89.21,
+      "timeMs": 89210,
+      "text": "Didn't mean to make you cry"
+    },
+    {
+      "index": 18,
+      "timestamp": "01:32.75",
+      "timeSeconds": 92.75,
+      "timeMs": 92750,
+      "text": "If I'm not back again this time tomorrow"
+    },
+    {
+      "index": 19,
+      "timestamp": "01:37.50",
+      "timeSeconds": 97.5,
+      "timeMs": 97500,
+      "text": "Carry on, carry on as if nothing really matters"
+    },
+    {
+      "index": 20,
+      "timestamp": "01:54.98",
+      "timeSeconds": 114.98,
+      "timeMs": 114980,
+      "text": "Too late, my time has come"
+    },
+    {
+      "index": 21,
+      "timestamp": "02:01.16",
+      "timeSeconds": 121.16,
+      "timeMs": 121160,
+      "text": "Sends shivers down my spine, body's aching all the time"
+    },
+    {
+      "index": 22,
+      "timestamp": "02:08.38",
+      "timeSeconds": 128.38,
+      "timeMs": 128380,
+      "text": "Goodbye, everybody, I've got to go"
+    },
+    {
+      "index": 23,
+      "timestamp": "02:14.94",
+      "timeSeconds": 134.94,
+      "timeMs": 134940,
+      "text": "Gotta leave you all behind and face the truth"
+    },
+    {
+      "index": 24,
+      "timestamp": "02:22.18",
+      "timeSeconds": 142.18,
+      "timeMs": 142180,
+      "text": "Mama, oo-oo-oo (the wind blows)"
+    },
+    {
+      "index": 25,
+      "timestamp": "02:29.02",
+      "timeSeconds": 149.02,
+      "timeMs": 149020,
+      "text": "I don't want to die"
+    },
+    {
+      "index": 26,
+      "timestamp": "02:32.26",
+      "timeSeconds": 152.26,
+      "timeMs": 152260,
+      "text": "I sometimes wish I'd never been born at all"
+    },
+    {
+      "index": 27,
+      "timestamp": "03:06.26",
+      "timeSeconds": 186.26,
+      "timeMs": 186260,
+      "text": "I see a little silhouetto of a man"
+    },
+    {
+      "index": 28,
+      "timestamp": "03:09.01",
+      "timeSeconds": 189.01,
+      "timeMs": 189010,
+      "text": "Scaramouch, Scaramouch, will you do the Fandango?"
+    },
+    {
+      "index": 29,
+      "timestamp": "03:12.75",
+      "timeSeconds": 192.75,
+      "timeMs": 192750,
+      "text": "Thunderbolts and lightning, very, very frightening me"
+    },
+    {
+      "index": 30,
+      "timestamp": "03:16.35",
+      "timeSeconds": 196.35,
+      "timeMs": 196350,
+      "text": "Galileo, Galileo"
+    },
+    {
+      "index": 31,
+      "timestamp": "03:17.83",
+      "timeSeconds": 197.83,
+      "timeMs": 197830,
+      "text": "Galileo, Galileo"
+    },
+    {
+      "index": 32,
+      "timestamp": "03:19.48",
+      "timeSeconds": 199.48,
+      "timeMs": 199480,
+      "text": "Galileo, Figaro, magnifico, oh-oh-oh"
+    },
+    {
+      "index": 33,
+      "timestamp": "03:22.84",
+      "timeSeconds": 202.84,
+      "timeMs": 202840,
+      "text": "I'm just a poor boy nobody loves me"
+    },
+    {
+      "index": 34,
+      "timestamp": "03:26.09",
+      "timeSeconds": 206.09,
+      "timeMs": 206090,
+      "text": "He's just a poor boy from a poor family"
+    },
+    {
+      "index": 35,
+      "timestamp": "03:29.22",
+      "timeSeconds": 209.22,
+      "timeMs": 209220,
+      "text": "Spare him his life from this monstrosity"
+    },
+    {
+      "index": 36,
+      "timestamp": "03:33.84",
+      "timeSeconds": 213.84,
+      "timeMs": 213840,
+      "text": "Easy come, easy go, will you let me go?"
+    },
+    {
+      "index": 37,
+      "timestamp": "03:36.68",
+      "timeSeconds": 216.68,
+      "timeMs": 216680,
+      "text": "Bismillah! No, we will not let you go"
+    },
+    {
+      "index": 38,
+      "timestamp": "03:39.85",
+      "timeSeconds": 219.85,
+      "timeMs": 219850,
+      "text": "(Let him go!) Bismillah! We will not let you go"
+    },
+    {
+      "index": 39,
+      "timestamp": "03:43.13",
+      "timeSeconds": 223.13,
+      "timeMs": 223130,
+      "text": "(Let him go!) Bismillah! We will not let you go"
+    },
+    {
+      "index": 40,
+      "timestamp": "03:46.33",
+      "timeSeconds": 226.33,
+      "timeMs": 226330,
+      "text": "(Let me go) will not let you go"
+    },
+    {
+      "index": 41,
+      "timestamp": "03:47.78",
+      "timeSeconds": 227.78,
+      "timeMs": 227780,
+      "text": "(Let me go) never let you go"
+    },
+    {
+      "index": 42,
+      "timestamp": "03:49.05",
+      "timeSeconds": 229.05,
+      "timeMs": 229050,
+      "text": "(Let me go) (never) let you go (let me go)"
+    },
+    {
+      "index": 43,
+      "timestamp": "03:51.55",
+      "timeSeconds": 231.55,
+      "timeMs": 231550,
+      "text": "No, no, no, no, no, no, no"
+    },
+    {
+      "index": 44,
+      "timestamp": "03:54.27",
+      "timeSeconds": 234.27,
+      "timeMs": 234270,
+      "text": "Oh, mama mia, mama mia (mama mia, let me go)"
+    },
+    {
+      "index": 45,
+      "timestamp": "03:57.42",
+      "timeSeconds": 237.42,
+      "timeMs": 237420,
+      "text": "Beelzebub has a devil put aside for me, for me"
+    },
+    {
+      "index": 46,
+      "timestamp": "04:03.81",
+      "timeSeconds": 243.81,
+      "timeMs": 243810,
+      "text": "For me"
+    },
+    {
+      "index": 47,
+      "timestamp": "04:15.01",
+      "timeSeconds": 255.01,
+      "timeMs": 255010,
+      "text": "So you think you can stop me and spit in my eye"
+    },
+    {
+      "index": 48,
+      "timestamp": "04:20.94",
+      "timeSeconds": 260.94,
+      "timeMs": 260940,
+      "text": "So you think you can love me and leave me to die"
+    },
+    {
+      "index": 49,
+      "timestamp": "04:26.06",
+      "timeSeconds": 266.06,
+      "timeMs": 266060,
+      "text": "Oh, baby, can't do this to me, baby"
+    },
+    {
+      "index": 50,
+      "timestamp": "04:33.12",
+      "timeSeconds": 273.12,
+      "timeMs": 273120,
+      "text": "Just gotta get out, just gotta get right outta here"
+    },
+    {
+      "index": 51,
+      "timestamp": "04:55.22",
+      "timeSeconds": 295.22,
+      "timeMs": 295220,
+      "text": "Oo-oo"
+    },
+    {
+      "index": 52,
+      "timestamp": "05:00.13",
+      "timeSeconds": 300.13,
+      "timeMs": 300130,
+      "text": "Oh, yeah, oh, yeah"
+    },
+    {
+      "index": 53,
+      "timestamp": "05:11.61",
+      "timeSeconds": 311.61,
+      "timeMs": 311610,
+      "text": "Nothing really matters, anyone can see"
+    },
+    {
+      "index": 54,
+      "timestamp": "05:18.67",
+      "timeSeconds": 318.67,
+      "timeMs": 318670,
+      "text": "Nothing really matters"
+    },
+    {
+      "index": 55,
+      "timestamp": "05:22.72",
+      "timeSeconds": 322.72,
+      "timeMs": 322720,
+      "text": "Nothing really matters to me"
+    },
+    {
+      "index": 56,
+      "timestamp": "05:43.13",
+      "timeSeconds": 343.13,
+      "timeMs": 343130,
+      "text": "Any way the wind blows"
+    }
+  ],
+  "rawLrc": null,
+  "plainLyrics": "Is this the real life?\nIs this just fantasy?\nCaught in a landside\nNo escape from reality\nOpen your eyes\nLook up to the skies and see\n\nI'm just a poor boy, I need no sympathy\nBecause I'm easy come, easy go\nLittle high, little low\nAny way the wind blows doesn't really matter to me (to me)\n\nMama\nJust killed a man\nPut a gun against his head, pulled my trigger\nNow he's dead\nMama, life had just begun\nBut now I've gone and thrown it all away\n\nMama, oo-oo-oo\nDidn't mean to make you cry\nIf I'm not back again this time tomorrow\nCarry on, carry on as if nothing really matters\n\nToo late, my time has come\nSends shivers down my spine, body's aching all the time\nGoodbye, everybody, I've got to go\nGotta leave you all behind and face the truth\n\nMama, oo-oo-oo (the wind blows)\nI don't want to die\nI sometimes wish I'd never been born at all\n\nI see a little silhouetto of a man\nScaramouch, Scaramouch, will you do the Fandango?\n\nThunderbolts and lightning, very, very frightening me\nGalileo, Galileo\nGalileo, Galileo\nGalileo, Figaro, magnifico, oh-oh-oh\n\nI'm just a poor boy nobody loves me\nHe's just a poor boy from a poor family\nSpare him his life from this monstrosity\n\nEasy come, easy go, will you let me go?\nBismillah! No, we will not let you go\n(Let him go!) Bismillah! We will not let you go\n(Let him go!) Bismillah! We will not let you go\n\n(Let me go) will not let you go\n(Let me go) never let you go\n(Let me go) (never) let you go (let me go)\nNo, no, no, no, no, no, no\n\nOh, mama mia, mama mia (mama mia, let me go)\nBeelzebub has a devil put aside for me, for me\nFor me\n\nSo you think you can stop me and spit in my eye\nSo you think you can love me and leave me to die\nOh, baby, can't do this to me, baby\nJust gotta get out, just gotta get right outta here\n\nOo-oo\nOh, yeah, oh, yeah\n\nNothing really matters, anyone can see\nNothing really matters\nNothing really matters to me\n\nAny way the wind blows"
+}

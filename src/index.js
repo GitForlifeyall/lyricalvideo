@@ -2,12 +2,19 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const LYRICS_DIR = path.join(__dirname, '../lyrics');
+
+// Ensure lyrics directory exists
+if (!fs.existsSync(LYRICS_DIR)) {
+  fs.mkdirSync(LYRICS_DIR, { recursive: true });
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -104,7 +111,7 @@ app.get('/api/lyrics/synced', async (req, res) => {
     }
 
     // Pick best match (prefer one with syncedLyrics)
-    const bestMatch = searchResults.find(item => !!item.syncedLyrics) || searchResults[0];
+    const bestMatch = searchResults.find(item => !!(item.syncedLyrics && item.syncedLyrics.trim().length > 0)) || searchResults[0];
     const parsedLines = parseLrcTimestamps(bestMatch.syncedLyrics || '');
 
     const resultPayload = {
@@ -178,6 +185,109 @@ app.get('/api/lyrics/search', async (req, res) => {
   } catch (error) {
     console.error('Error searching lyrics:', error);
     return res.status(500).json({ error: 'Failed to search lyrics', message: error.message });
+  }
+});
+
+/**
+ * POST /api/lyrics/save
+ * Save the synchronized JSON time-synced file to the backend's `lyrics/` folder
+ */
+app.post('/api/lyrics/save', async (req, res) => {
+  try {
+    const { track, customFilename } = req.body;
+    if (!track) {
+      return res.status(400).json({ error: 'Track payload is required' });
+    }
+
+    await fs.promises.mkdir(LYRICS_DIR, { recursive: true });
+
+    const safeArtist = (track.artistName || 'Unknown_Artist').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    const safeTitle = (track.trackName || track.name || 'Unknown_Track').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase();
+    
+    const filename = customFilename 
+      ? `${customFilename.replace(/[^a-zA-Z0-9_-]/g, '_')}.json`
+      : `${safeArtist}_${safeTitle}.json`;
+
+    const filePath = path.join(LYRICS_DIR, filename);
+
+    const parsedLines = track.syncedLines && track.syncedLines.length > 0
+      ? track.syncedLines
+      : parseLrcTimestamps(track.syncedLyrics || '');
+
+    const payloadToSave = {
+      id: track.id,
+      trackName: track.trackName || track.name,
+      artistName: track.artistName,
+      albumName: track.albumName,
+      duration: track.duration,
+      instrumental: track.instrumental || false,
+      hasSyncedLyrics: !!(track.syncedLyrics || (parsedLines && parsedLines.length > 0)),
+      savedAt: new Date().toISOString(),
+      totalLines: parsedLines.length,
+      syncedLines: parsedLines,
+      rawLrc: track.syncedLyrics || null,
+      plainLyrics: track.plainLyrics || null
+    };
+
+    await fs.promises.writeFile(filePath, JSON.stringify(payloadToSave, null, 2), 'utf-8');
+
+    // Also write companion .lrc file if synced lyrics exist
+    if (track.syncedLyrics) {
+      const lrcFilename = filename.replace(/\.json$/, '.lrc');
+      const lrcFilePath = path.join(LYRICS_DIR, lrcFilename);
+      await fs.promises.writeFile(lrcFilePath, track.syncedLyrics, 'utf-8');
+    }
+
+    return res.json({
+      status: 'success',
+      message: `Successfully saved synced JSON to lyrics folder!`,
+      filename: filename,
+      filePath: `lyrics/${filename}`,
+      totalLines: parsedLines.length,
+      savedData: payloadToSave
+    });
+  } catch (error) {
+    console.error('Error saving lyrics file:', error);
+    return res.status(500).json({ error: 'Failed to save lyrics file', message: error.message });
+  }
+});
+
+/**
+ * GET /api/lyrics/saved
+ * List all saved lyric files in the `lyrics/` directory
+ */
+app.get('/api/lyrics/saved', async (req, res) => {
+  try {
+    if (!fs.existsSync(LYRICS_DIR)) {
+      return res.json({ files: [] });
+    }
+
+    const fileList = await fs.promises.readdir(LYRICS_DIR);
+    const jsonFiles = fileList.filter(f => f.endsWith('.json'));
+
+    const results = await Promise.all(
+      jsonFiles.map(async (filename) => {
+        try {
+          const content = await fs.promises.readFile(path.join(LYRICS_DIR, filename), 'utf-8');
+          const parsed = JSON.parse(content);
+          return {
+            filename,
+            trackName: parsed.trackName,
+            artistName: parsed.artistName,
+            totalLines: parsed.totalLines || (parsed.syncedLines ? parsed.syncedLines.length : 0),
+            savedAt: parsed.savedAt,
+            hasSyncedLyrics: parsed.hasSyncedLyrics
+          };
+        } catch {
+          return { filename };
+        }
+      })
+    );
+
+    return res.json({ total: results.length, files: results });
+  } catch (error) {
+    console.error('Error listing saved lyrics:', error);
+    return res.status(500).json({ error: 'Failed to list saved files' });
   }
 });
 

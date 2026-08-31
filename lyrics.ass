@@ -8,40 +8,47 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Impact,58,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,3,2,70,70,450,1
+Style: Default,Impact,62,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,3,2,70,70,440,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:49.20,0:00:50.63,Default,,0,0,0,,I'VE BEEN TRYNA CALL
-Dialogue: 0,0:00:52.13,0:00:54.63,Default,,0,0,0,,I'VE BEEN ON MY OWN FOR LONG ENOUGH
-Dialogue: 0,0:00:54.67,0:00:59.40,Default,,0,0,0,,MAYBE YOU CAN SHOW ME HOW TO LOVE, MAYBE
-Dialogue: 0,0:01:00.43,0:01:02.27,Default,,0,0,0,,I'M GOING THROUGH WITHDRAWALS
-Dialogue: 0,0:01:03.30,0:01:06.17,Default,,0,0,0,,YOU DON'T EVEN HAVE TO DO TOO MUCH
-Dialogue: 0,0:01:06.20,0:01:10.63,Default,,0,0,0,,YOU CAN TURN ME ON WITH JUST A TOUCH, BABY
-Dialogue: 0,0:01:11.60,0:01:12.70,Default,,0,0,0,,I LOOK AROUND AND
-Dialogue: 0,0:01:12.73,0:01:15.50,Default,,0,0,0,,SIN CITY'S COLD AND EMPTY (OH)
-Dialogue: 0,0:01:15.53,0:01:18.40,Default,,0,0,0,,NO ONE'S AROUND TO JUDGE ME (OH)
-Dialogue: 0,0:01:18.43,0:01:22.70,Default,,0,0,0,,I CAN'T SEE CLEARLY WHEN YOU'RE GONE
-Dialogue: 0,0:01:22.73,0:01:29.20,Default,,0,0,0,,I SAID, OOH, I'M BLINDED BY THE LIGHTS
-Dialogue: 0,0:01:29.23,0:01:33.23,Default,,0,0,0,,NO, I CAN'T SLEEP UNTIL I FEEL YOUR TOUCH
-Dialogue: 0,0:01:34.20,0:01:40.17,Default,,0,0,0,,I SAID, OOH, I'M DROWNING IN THE NIGHT
-Dialogue: 0,0:01:40.20,0:01:44.30,Default,,0,0,0,,OH, WHEN I'M LIKE THIS, YOU'RE THE ONE I TRUST
-Dialogue: 0,0:01:44.33,0:01:46.30,Default,,0,0,0,,HEY, HEY, HEY
-Dialogue: 0,0:01:56.50,0:01:58.40,Default,,0,0,0,,I'M RUNNING OUT OF TIME
-Dialogue: 0,0:01:59.30,0:02:02.33,Default,,0,0,0,,'CAUSE I CAN SEE THE SUN LIGHT UP THE SKY
-Dialogue: 0,0:02:02.37,0:02:09.13,Default,,0,0,0,,SO I HIT THE ROAD IN OVERDRIVE, BABY, OH
-Dialogue: 0,0:02:09.17,0:02:11.57,Default,,0,0,0,,THE CITY'S COLD AND EMPTY (OH)
-Dialogue: 0,0:02:11.60,0:02:14.47,Default,,0,0,0,,NO ONE'S AROUND TO JUDGE ME (OH)
-Dialogue: 0,0:02:14.50,0:02:19.17,Default,,0,0,0,,I CAN'T SEE CLEARLY WHEN YOU'RE GONE
-Dialogue: 0,0:02:19.20,0:02:25.37,Default,,0,0,0,,I SAID, OOH, I'M BLINDED BY THE LIGHTS
-Dialogue: 0,0:02:25.40,0:02:30.37,Default,,0,0,0,,NO, I CAN'T SLEEP UNTIL I FEEL YOUR TOUCH
-Dialogue: 0,0:02:32.57,0:02:38.67,Default,,0,0,0,,I SAID, OOH, I'M DROWNING IN THE NIGHT
-Dialogue: 0,0:02:38.70,0:02:43.13,Default,,0,0,0,,OH, WHEN I'M LIKE THIS, YOU'RE THE ONE I TRUST
-Dialogue: 0,0:02:44.27,0:02:47.20,Default,,0,0,0,,I'M JUST CALLING BACK TO LET YOU KNOW (BACK TO LET YOU KNOW)
-Dialogue: 0,0:02:47.23,0:02:50.37,Default,,0,0,0,,I COULD NEVER SAY IT ON THE PHONE (SAY IT ON THE PHONE)
-Dialogue: 0,0:02:50.40,0:02:55.47,Default,,0,0,0,,WILL NEVER LET YOU GO THIS TIME (OOH)
-Dialogue: 0,0:02:55.50,0:03:01.33,Default,,0,0,0,,I SAID, OOH, I'M BLINDED BY THE LIGHTS
-Dialogue: 0,0:03:01.37,0:03:05.50,Default,,0,0,0,,NO, I CAN'T SLEEP UNTIL I FEEL YOUR TOUCH
-Dialogue: 0,0:03:05.53,0:03:18.67,Default,,0,0,0,,HEY, HEY, HEY
-Dialogue: 0,0:03:28.77,0:03:34.70,Default,,0,0,0,,I SAID, OOH, I'M BLINDED BY THE LIGHTS
-Dialogue: 0,0:03:34.73,0:03:39.47,Default,,0,0,0,,NO, I CAN'T SLEEP UNTIL I FEEL YOUR TOUCH
+Dialogue: 0,0:00:06.08,0:00:15.52,Default,,0,0,0,,गल सुन ल लारिया वे आ लोक मेरे ते हस दे
+Dialogue: 0,0:00:11.28,0:00:19.64,Default,,0,0,0,,पैसे ज्याद दे दूंगी मैचिंग कर दगा तो दस
+Dialogue: 0,0:00:15.52,0:00:24.80,Default,,0,0,0,,दे सोन ला रि सेम चाहि दी आला फोटो ब
+Dialogue: 0,0:00:19.64,0:00:24.80,Default,,0,0,0,,फरारी लाल दी चुन्नी मेरी रंग दे
+Dialogue: 0,0:00:25.40,0:00:33.60,Default,,0,0,0,,लारिया वे चुन्नी मेरी रंग दे लरिया मेरे
+Dialogue: 0,0:00:29.40,0:00:37.92,Default,,0,0,0,,यार गडी दे नाल दी चुन्नी मेरी रंग दे लला
+Dialogue: 0,0:00:33.60,0:00:40.88,Default,,0,0,0,,आवे मेरे यार दी गड्डी दे नाल दी ता पंगे
+Dialogue: 0,0:00:37.92,0:00:44.88,Default,,0,0,0,,लग देया उन चंगे लग देया ताही सोचा कुंडला
+Dialogue: 0,0:00:40.88,0:00:48.72,Default,,0,0,0,,पवा लवा सोचा शरे आम हो जा सोच दिया नामदा
+Dialogue: 0,0:00:44.88,0:00:51.44,Default,,0,0,0,,गोटी उते टटू बनवा लवा सोच दी फटाल दी मैं
+Dialogue: 0,0:00:48.72,0:00:56.04,Default,,0,0,0,,फैंटम दे नाल दी मैं एक होर कुड़ती सवा
+Dialogue: 0,0:00:51.44,0:01:00.12,Default,,0,0,0,,लवा नू देख के ता मेरी हो जावे उम्र वदी
+Dialogue: 0,0:00:56.04,0:01:03.92,Default,,0,0,0,,दे नाल दी वे चुन्नी मेरी रंग दे लारिया
+Dialogue: 0,0:01:00.12,0:01:09.00,Default,,0,0,0,,मेरे यार द गडी दे नाल दी चुन्नी मेरी रंग
+Dialogue: 0,0:01:03.92,0:01:09.00,Default,,0,0,0,,दे लारिया रे मेरे यार द गडी दे नाल
+Dialogue: 0,0:01:10.38,0:01:15.47,Default,,0,0,0,,[संगीत]
+Dialogue: 0,0:01:17.40,0:01:24.84,Default,,0,0,0,,दी मेरे ले देख ले कुड़िया कवाया ने देखी
+Dialogue: 0,0:01:21.48,0:01:29.36,Default,,0,0,0,,दुपट्टे तेरे विक दे इनी सोनी चुन्नी लगे
+Dialogue: 0,0:01:24.84,0:01:32.84,Default,,0,0,0,,जट्टी तेनू जद व देखे गाना लिख दे कमन
+Dialogue: 0,0:01:29.36,0:01:37.44,Default,,0,0,0,,बड़े नरे को कड़ नाले हले मैं सोरा गड़ा
+Dialogue: 0,0:01:32.84,0:01:41.96,Default,,0,0,0,,मारना आदा प्यार होना दीदार जज नाल हुई
+Dialogue: 0,0:01:37.44,0:01:45.52,Default,,0,0,0,,मैं तयार ना डर लगदा ना किथे रह जावा सदी
+Dialogue: 0,0:01:41.96,0:01:49.72,Default,,0,0,0,,ना सदी दे नाल दी वे चुन्नी मेरी रंग दे
+Dialogue: 0,0:01:45.52,0:01:55.44,Default,,0,0,0,,लारिया मेरे यार द डडी दे नाल द चुन्नी
+Dialogue: 0,0:01:49.72,0:01:55.44,Default,,0,0,0,,मेरी रंग दे लारिया मेरे यार द डडी दे नाल
+Dialogue: 0,0:01:56.16,0:02:03.80,Default,,0,0,0,,द
+Dialogue: 0,0:01:58.84,0:02:08.44,Default,,0,0,0,,आर यार द घ दे नाल द मेरी यार द घ दे नाल
+Dialogue: 0,0:02:03.80,0:02:12.96,Default,,0,0,0,,द ओ जली न लर मेरी हो जावे घर द गडी दे
+Dialogue: 0,0:02:08.44,0:02:16.36,Default,,0,0,0,,नाल द चुन्नी मेरी रंग दे लरिया मेरे यार
+Dialogue: 0,0:02:12.96,0:02:19.36,Default,,0,0,0,,द गड्डी दे नाल द चुन्नी मेरी रक दे
+Dialogue: 0,0:02:16.36,0:02:22.92,Default,,0,0,0,,लारिया हा मेरी आरती टी
+Dialogue: 0,0:02:19.36,0:02:24.52,Default,,0,0,0,,दे चुन्नी मेरी रंक दे लारिया हा मेरी
+Dialogue: 0,0:02:22.92,0:02:28.96,Default,,0,0,0,,आरती टी दे
+Dialogue: 0,0:02:24.52,0:02:31.76,Default,,0,0,0,,ना चुनी मेरी ले लारिया दे मेरे यार द घ
+Dialogue: 0,0:02:28.96,0:02:31.76,Default,,0,0,0,,दे नाल
+Dialogue: 0,0:02:32.30,0:02:38.10,Default,,0,0,0,,[संगीत]
+Dialogue: 0,0:02:38.20,0:02:45.20,Default,,0,0,0,,वे चुन्नी मेरी रंग दे लला रिया मेरे यार
+Dialogue: 0,0:02:41.48,0:02:49.80,Default,,0,0,0,,द गडी दे नाल दी चुन्नी मेरी रंग दे लला
+Dialogue: 0,0:02:45.20,0:02:49.80,Default,,0,0,0,,रिया वे मेरे यार द गडी दे नाल
+Dialogue: 0,0:02:49.88,0:02:52.88,Default,,0,0,0,,दी

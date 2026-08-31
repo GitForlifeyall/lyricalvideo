@@ -44,38 +44,52 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
 
 def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str = "auto") -> Tuple[List[Tuple[float, float, str]], str]:
     """
-    Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET
-    matching the user's preferred language (e.g. en, es, fr, de, ja, ko, hi, auto).
+    Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET.
+    Prioritizes original native audio captions (-orig) and manual tracks when in auto mode.
     """
     subtitles_dict = video_info.get("subtitles", {})
     auto_captions_dict = video_info.get("automatic_captions", {})
     lang_pref = (target_lang or "auto").lower().strip()
 
     candidate_langs = []
-    
-    # 1. Match requested language in manual creator subtitles
-    for k, v in subtitles_dict.items():
-        if k != "live_chat":
-            if lang_pref == "auto" or k.lower().startswith(lang_pref) or lang_pref in k.lower():
+
+    if lang_pref == "auto":
+        # 1. First priority: Any creator manual subtitles
+        for k, v in subtitles_dict.items():
+            if k != "live_chat":
                 candidate_langs.append(("manual", k, v))
 
-    # 2. Match requested language in automatic captions / translations
-    for k, v in auto_captions_dict.items():
-        if k != "live_chat":
-            if lang_pref == "auto" or k.lower().startswith(lang_pref) or lang_pref in k.lower():
-                candidate_langs.append(("auto", k, v))
+        # 2. Second priority: Original spoken audio auto-caption (e.g. 'en-orig', 'hi-orig', 'pa-orig')
+        for k, v in auto_captions_dict.items():
+            if k.endswith("-orig") or "orig" in k:
+                candidate_langs.append(("auto_orig", k, v))
 
-    # 3. Fallback to English if requested language not present
-    if not candidate_langs and lang_pref != "en":
-        for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
-            if k.lower().startswith("en") and k != "live_chat":
-                candidate_langs.append(("fallback_en", k, v))
+        # 3. Third priority: English auto-caption
+        for k, v in auto_captions_dict.items():
+            if k.startswith("en"):
+                candidate_langs.append(("auto_en", k, v))
 
-    # 4. Fallback to any first available subtitle track
-    if not candidate_langs:
-        for k, v in list(subtitles_dict.items()) + list(auto_captions_dict.items()):
-            if k != "live_chat":
-                candidate_langs.append(("fallback_any", k, v))
+        # 4. Fourth priority: Any first available auto-caption
+        for k, v in auto_captions_dict.items():
+            if k != "live_chat" and k not in [c[1] for c in candidate_langs]:
+                candidate_langs.append(("auto_fallback", k, v))
+
+    else:
+        # User specified a specific language code (e.g. 'en', 'es', 'hi', 'pa', 'ja')
+        # 1. Match in manual subtitles
+        for k, v in subtitles_dict.items():
+            if k != "live_chat" and (k.lower().startswith(lang_pref) or lang_pref in k.lower()):
+                candidate_langs.append(("manual_target", k, v))
+
+        # 2. Match in auto-captions
+        for k, v in auto_captions_dict.items():
+            if k != "live_chat" and (k.lower().startswith(lang_pref) or lang_pref in k.lower()):
+                candidate_langs.append(("auto_target", k, v))
+
+        # 3. Fallback to original or English
+        for k, v in auto_captions_dict.items():
+            if k.endswith("-orig") or k.startswith("en"):
+                candidate_langs.append(("fallback_orig", k, v))
 
     for kind, lang_key, formats in candidate_langs:
         json3_fmt = next((f for f in formats if f.get("ext") == "json3"), None)
@@ -93,12 +107,12 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str 
                     data = resp.json()
                     cues = parse_json3_timedtext(data)
                     if cues:
-                        print(f"[Subtitles] Fetched {len(cues)} cues for language '{lang_key}' ({kind})")
+                        print(f"[Subtitles] Selected '{lang_key}' ({kind}) with {len(cues)} lines")
                         return cues, lang_key
                 else:
                     cues = parse_vtt_text(resp.text)
                     if cues:
-                        print(f"[Subtitles] Parsed {len(cues)} VTT cues for language '{lang_key}' ({kind})")
+                        print(f"[Subtitles] Selected VTT '{lang_key}' ({kind}) with {len(cues)} lines")
                         return cues, lang_key
         except Exception as e:
             print(f"[Warning] Failed to fetch subtitles for {lang_key}: {e}")
@@ -122,7 +136,8 @@ def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]
         clean_text = " ".join(clean_text.split())
 
         if clean_text and clean_text != "\n":
-            end_sec = max(t_start + 1.0, t_start + t_dur)
+            dur = t_dur if t_dur > 0 else 2.5
+            end_sec = max(t_start + 1.5, t_start + dur)
             cues.append((t_start, end_sec, clean_text))
 
     deduped: List[Tuple[float, float, str]] = []
@@ -160,6 +175,8 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
         clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
 
         if clean_text:
+            if end_sec <= start_sec:
+                end_sec = start_sec + 2.5
             cues.append((start_sec, end_sec, clean_text))
 
     deduped: List[Tuple[float, float, str]] = []

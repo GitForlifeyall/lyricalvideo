@@ -208,16 +208,49 @@
           <button class="backdrop-btn" data-bg="green" title="Green Screen">🟩 Green</button>
           <button class="backdrop-btn" data-bg="black" title="OLED Black">⬛ Black</button>
         </div>
+      <!-- Interactive Subtitle Placement Customizer -->
+      <div class="placement-customizer-bar">
+        <div class="placement-header-row">
+          <div class="placement-title">
+            <span class="placement-icon">📐</span>
+            <strong>Interactive Subtitle Placement:</strong>
+            <span class="placement-hint">(Drag the box on the video or use slider below)</span>
+          </div>
+          <button type="button" id="apply-placement-btn" class="apply-placement-btn">
+            <span>⚡ Apply &amp; Re-render Video</span>
+          </button>
+        </div>
+
+        <div class="placement-controls-row">
+          <!-- Position Presets -->
+          <div class="placement-presets">
+            <button type="button" class="pos-preset-btn" data-pos="top">⬆️ Top</button>
+            <button type="button" class="pos-preset-btn" data-pos="middle">🎯 Center</button>
+            <button type="button" class="pos-preset-btn active" data-pos="bottom">⬇️ Bottom</button>
+          </div>
+
+          <!-- Vertical Slider -->
+          <div class="placement-slider-wrap">
+            <label for="vertical-pos-slider" class="slider-label">Vertical Position:</label>
+            <input type="range" id="vertical-pos-slider" min="5" max="95" value="80" class="placement-slider" />
+            <span id="slider-pos-val" class="slider-pos-val">80% (Bottom)</span>
+          </div>
+        </div>
       </div>
 
       <div class="stage-content-grid">
-        <!-- Left: Video Canvas Container -->
+        <!-- Left: Video Canvas Container with Draggable Guide -->
         <div class="video-preview-wrapper" id="video-preview-wrapper">
           <div class="video-backdrop backdrop-black" id="video-backdrop">
             <video id="output-video-player" class="output-video-player" controls autoplay playsinline loop>
               <source id="video-source" src="" type="video/mp4">
               Your browser does not support the video tag.
             </video>
+            <!-- Interactive Draggable Subtitle Guide -->
+            <div id="interactive-subtitle-guide" class="interactive-subtitle-guide" title="Drag to reposition subtitles">
+              <span class="guide-drag-icon">⋮⋮</span>
+              <span id="guide-sample-text" class="guide-sample-text">✨ [Drag to Reposition Subtitles]</span>
+            </div>
           </div>
         </div>
 

@@ -829,6 +829,165 @@ body {
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
 }
 
+/* Interactive Subtitle Placement Customizer */
+.placement-customizer-bar {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-lg);
+  padding: 0.9rem 1.25rem;
+  backdrop-filter: blur(20px);
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.placement-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.placement-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.placement-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-weight: normal;
+}
+
+.apply-placement-btn {
+  background: var(--accent-gradient);
+  border: none;
+  color: #ffffff;
+  font-family: var(--font-sans);
+  font-size: 0.825rem;
+  font-weight: 700;
+  padding: 0.45rem 1.1rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.apply-placement-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 18px rgba(139, 92, 246, 0.55);
+}
+
+.placement-controls-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.placement-presets {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pos-preset-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pos-preset-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-primary);
+}
+
+.pos-preset-btn.active {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: var(--border-focus);
+  color: #ffffff;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.3);
+}
+
+.placement-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex: 1;
+  min-width: 260px;
+}
+
+.slider-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.placement-slider {
+  flex: 1;
+  accent-color: #8b5cf6;
+  cursor: pointer;
+}
+
+.slider-pos-val {
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: #a78bfa;
+  font-weight: 700;
+  min-width: 90px;
+}
+
+/* Interactive Draggable Subtitle Guide Overlay on Video */
+.interactive-subtitle-guide {
+  position: absolute;
+  left: 50%;
+  top: 80%;
+  transform: translate(-50%, -50%);
+  background: rgba(139, 92, 246, 0.45);
+  border: 2px dashed #c4b5fd;
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.85rem;
+  color: #ffffff;
+  font-family: Impact, sans-serif;
+  font-size: 1.1rem;
+  cursor: grab;
+  user-select: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+  backdrop-filter: blur(4px);
+  transition: background 0.2s ease;
+}
+
+.interactive-subtitle-guide:active {
+  cursor: grabbing;
+  background: rgba(139, 92, 246, 0.7);
+  box-shadow: 0 0 26px rgba(139, 92, 246, 0.9);
+}
+
+.guide-drag-icon {
+  font-size: 0.9rem;
+  opacity: 0.75;
+  cursor: grab;
+}
+
 /* Stage Grid (Video Canvas + Teleprompter) */
 .stage-content-grid {
   display: grid;

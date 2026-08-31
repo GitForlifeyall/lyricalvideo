@@ -10,6 +10,8 @@ const state = {
   template: 'template1',
   fontFamily: 'Impact',
   language: 'auto',
+  verticalPositionPercent: 80,
+  activeQuery: '',
 };
 
 // DOM Elements
@@ -22,6 +24,14 @@ const fontBtns = document.querySelectorAll('#font-group .font-pill');
 const customFontInput = document.getElementById('custom-font-input');
 const langBtns = document.querySelectorAll('#lang-group .lang-pill');
 const customLangInput = document.getElementById('custom-lang-input');
+
+// Placement elements
+const verticalPosSlider = document.getElementById('vertical-pos-slider');
+const sliderPosVal = document.getElementById('slider-pos-val');
+const posPresetBtns = document.querySelectorAll('.pos-preset-btn');
+const applyPlacementBtn = document.getElementById('apply-placement-btn');
+const interactiveGuide = document.getElementById('interactive-subtitle-guide');
+const guideSampleText = document.getElementById('guide-sample-text');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -77,6 +87,7 @@ let logCount = 0;
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  setupInteractivePlacement();
   loadVideosGallery();
 });
 
@@ -86,11 +97,12 @@ function setupEventListeners() {
     e.preventDefault();
     const query = songQueryInput.value.trim();
     if (query) {
+      state.activeQuery = query;
       startGenerationPipeline(query);
     }
   });
 
-  // Template Selection (Template 1, 2, 3)
+  // Template Selection (Template 1, 2, 3, brat)
   templatePills.forEach((pill) => {
     pill.addEventListener('click', () => {
       templatePills.forEach(p => p.classList.remove('active'));
@@ -160,6 +172,109 @@ function setupEventListeners() {
   });
 }
 
+// -------------------------------------------------------------
+// Interactive Dynamic Lyrics Placement Setup & Dragging
+// -------------------------------------------------------------
+function setupInteractivePlacement() {
+  if (!verticalPosSlider || !interactiveGuide) return;
+
+  function updatePosition(percent, updateSlider = true) {
+    percent = Math.max(10, Math.min(90, Math.round(percent)));
+    state.verticalPositionPercent = percent;
+
+    interactiveGuide.style.top = `${percent}%`;
+
+    if (updateSlider && verticalPosSlider) {
+      verticalPosSlider.value = percent;
+    }
+
+    let posName = 'Center';
+    if (percent <= 30) posName = 'Top';
+    else if (percent >= 70) posName = 'Bottom';
+
+    if (sliderPosVal) {
+      sliderPosVal.textContent = `${percent}% (${posName})`;
+    }
+
+    // Update active preset button
+    posPresetBtns.forEach((btn) => {
+      if (btn.dataset.pos === 'top' && percent <= 30) btn.classList.add('active');
+      else if (btn.dataset.pos === 'middle' && percent > 30 && percent < 70) btn.classList.add('active');
+      else if (btn.dataset.pos === 'bottom' && percent >= 70) btn.classList.add('active');
+      else btn.classList.remove('active');
+    });
+  }
+
+  // Slider change
+  verticalPosSlider.addEventListener('input', (e) => {
+    updatePosition(parseFloat(e.target.value), false);
+  });
+
+  // Preset Buttons
+  posPresetBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      posPresetBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const pos = btn.dataset.pos;
+      if (pos === 'top') updatePosition(20);
+      else if (pos === 'middle') updatePosition(50);
+      else if (pos === 'bottom') updatePosition(80);
+    });
+  });
+
+  // Interactive Dragging on Video Canvas
+  let isDragging = false;
+
+  interactiveGuide.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    const rect = videoPreviewWrapper.getBoundingClientRect();
+    if (rect.height > 0) {
+      const yOffset = e.clientY - rect.top;
+      const percent = (yOffset / rect.height) * 100;
+      updatePosition(percent);
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    isDragging = false;
+  });
+
+  // Touch support for mobile dragging
+  interactiveGuide.addEventListener('touchstart', (e) => {
+    isDragging = true;
+  }, { passive: true });
+
+  window.addEventListener('touchmove', (e) => {
+    if (!isDragging || !e.touches[0]) return;
+    const rect = videoPreviewWrapper.getBoundingClientRect();
+    if (rect.height > 0) {
+      const yOffset = e.touches[0].clientY - rect.top;
+      const percent = (yOffset / rect.height) * 100;
+      updatePosition(percent);
+    }
+  }, { passive: true });
+
+  window.addEventListener('touchend', () => {
+    isDragging = false;
+  });
+
+  // Apply & Re-render button
+  if (applyPlacementBtn) {
+    applyPlacementBtn.addEventListener('click', () => {
+      const q = state.activeQuery || songQueryInput.value.trim();
+      if (q) {
+        showToast(`Re-rendering video at ${state.verticalPositionPercent}% height... ⚡`);
+        startGenerationPipeline(q);
+      }
+    });
+  }
+}
+
 // 1. Start Server-Sent Events (SSE) Video Generation
 function startGenerationPipeline(query) {
   if (state.isGenerating && state.currentEventSource) {
@@ -176,8 +291,13 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, and language parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}`;
+  // Compute exact marginV based on verticalPositionPercent and canvas orientation
+  const isPortrait = state.template !== 'template3';
+  const totalHeight = isPortrait ? 1920 : 1080;
+  const marginV = Math.round(((100 - state.verticalPositionPercent) / 100) * totalHeight);
+
+  // Connect to SSE Endpoint with template, font, language, and margin_v parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&margin_v=${marginV}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 

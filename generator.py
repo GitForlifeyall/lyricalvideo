@@ -374,13 +374,19 @@ def download_youtube_audio(
 
     cues, matched_lang = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
-    # Genius API Fallback for songs without subtitles or non-English tracks
-    if not cues:
-        emit_progress("genius_fallback", 50, f"No native YouTube captions. Fetching verified lyrics from Genius API...")
+    def has_indic_script(cues_list):
+        for _, _, text in cues_list:
+            if any(('\u0900' <= ch <= '\u097F') or ('\u0A00' <= ch <= '\u0A7F') for ch in text):
+                return True
+        return False
+
+    # Genius API Fallback for songs without subtitles or to ensure Romanized Punjabi/Hinglish script
+    if not cues or (target_lang in ["pa", "punjabi", "hinglish"] and has_indic_script(cues)):
+        emit_progress("genius_fallback", 50, f"Fetching verified Romanized Punjabi/Hinglish lyrics from Genius API...")
         genius_cues, genius_lang = fetch_genius_lyrics_fallback(title, uploader, duration)
         if genius_cues:
             cues = genius_cues
-            matched_lang = genius_lang
+            matched_lang = "hinglish"
 
     emit_progress("ytdlp_done", 55, f"Audio & lyrics ready: '{title}' ({len(cues)} lines, source: {matched_lang})", {
         "title": title,
@@ -488,11 +494,13 @@ def build_ass_and_lrc_content(
     aspect_ratio: str = "portrait",
     font_name: str = "Impact",
     font_size: Optional[int] = None,
-    template_key: Optional[str] = "template1"
+    template_key: Optional[str] = "template1",
+    custom_margin_v: Optional[int] = None,
+    custom_alignment: Optional[int] = None
 ) -> Tuple[str, List[Dict[str, Any]], str]:
     """
-    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3, brat)
-    or custom typography.
+    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3, brat),
+    custom typography, and interactive dynamic margin/alignment positioning.
     """
     tpl = TEMPLATES.get((template_key or "").lower(), TEMPLATES["template1"])
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
@@ -512,8 +520,8 @@ def build_ass_and_lrc_content(
         res_y = 1920
         margin_l = 70
         margin_r = 70
-        margin_v = tpl.get("margin_v", 440)
-        alignment = 2   # Bottom-center
+        default_margin_v = tpl.get("margin_v", 440)
+        default_alignment = 2   # Bottom-center
         outline_width = tpl.get("outline_width", 4)
         shadow_depth = tpl.get("shadow_depth", 3)
     else:
@@ -521,10 +529,13 @@ def build_ass_and_lrc_content(
         res_y = 1080
         margin_l = 60
         margin_r = 60
-        margin_v = tpl.get("margin_v", 80)
-        alignment = 2
+        default_margin_v = tpl.get("margin_v", 80)
+        default_alignment = 2
         outline_width = tpl.get("outline_width", 3)
         shadow_depth = tpl.get("shadow_depth", 2)
+
+    actual_margin_v = custom_margin_v if custom_margin_v is not None else default_margin_v
+    actual_alignment = custom_alignment if custom_alignment is not None else default_alignment
 
     actual_font_size = font_size if font_size and font_size > 0 else tpl.get("font_size", 54)
     primary_color = tpl.get("primary_color", "&H00FFFFFF")
@@ -544,7 +555,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,100,100,0,0,{border_style},{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
+Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,100,100,0,0,{border_style},{outline_width},{shadow_depth},{actual_alignment},{margin_l},{margin_r},{actual_margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -577,7 +588,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_header + "\n".join(dialogues) + "\n")
 
     raw_lrc = "\n".join(raw_lrc_lines)
-    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} events, {res_x}x{res_y}).")
+    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} events, {res_x}x{res_y}, MarginV: {actual_margin_v}).")
     return output_ass_path, structured_lines, raw_lrc
 
 
@@ -649,9 +660,11 @@ def generate_lyric_video(
     font_name: str = "Impact",
     font_size: Optional[int] = None,
     lang: str = "auto",
-    template: str = "template1"
+    template: str = "template1",
+    margin_v: Optional[int] = None,
+    alignment: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Templates (1, 2, 3), Portrait/Landscape, and Subtitle Language."""
+    """Main generator pipeline supporting Templates (1, 2, 3, brat), Custom Placement (margin_v/alignment), and Subtitle Language."""
     tpl = TEMPLATES.get((template or "").lower(), TEMPLATES["template1"])
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
@@ -674,7 +687,9 @@ def generate_lyric_video(
         aspect_ratio=effective_aspect,
         font_name=effective_font,
         font_size=font_size,
-        template_key=template
+        template_key=template,
+        custom_margin_v=margin_v,
+        custom_alignment=alignment
     )
 
     render_lyric_video_ffmpeg(
@@ -697,6 +712,8 @@ def generate_lyric_video(
         "aspect_ratio": effective_aspect,
         "font_name": effective_font,
         "template": template,
+        "margin_v": margin_v,
+        "alignment": alignment,
         "language": yt_data.get("matched_lang", lang),
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
@@ -718,6 +735,8 @@ if __name__ == "__main__":
     size = None
     lang = "auto"
     template = "template1"
+    margin_v = None
+    alignment = None
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -738,6 +757,16 @@ if __name__ == "__main__":
             lang = a.split("=")[1].strip()
         elif a.startswith("--template="):
             template = a.split("=")[1].strip()
+        elif a.startswith("--margin-v="):
+            try:
+                margin_v = int(a.split("=")[1])
+            except ValueError:
+                pass
+        elif a.startswith("--alignment="):
+            try:
+                alignment = int(a.split("=")[1])
+            except ValueError:
+                pass
 
     res = generate_lyric_video(
         song_query=query,
@@ -747,7 +776,9 @@ if __name__ == "__main__":
         font_name=font or "Impact",
         font_size=size,
         lang=lang,
-        template=template
+        template=template,
+        margin_v=margin_v,
+        alignment=alignment
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

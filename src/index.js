@@ -29,8 +29,9 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static frontend assets
+// Serve static frontend assets and saved lyrics
 app.use(express.static(path.join(__dirname, '../public')));
+app.use('/lyrics', express.static(LYRICS_DIR));
 
 /**
  * Utility: Parse raw LRC text into structured timestamps JSON

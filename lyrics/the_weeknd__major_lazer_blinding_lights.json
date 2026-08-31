@@ -1,0 +1,239 @@
+{
+  "id": 34382404,
+  "trackName": "Blinding Lights",
+  "artistName": "The Weeknd, Major Lazer",
+  "albumName": "Blinding Lights",
+  "duration": 198,
+  "instrumental": false,
+  "hasSyncedLyrics": true,
+  "savedAt": "2026-08-31T18:35:58.736Z",
+  "totalLines": 32,
+  "syncedLines": [
+    {
+      "index": 0,
+      "timestamp": "00:07.04",
+      "timeSeconds": 7.04,
+      "timeMs": 7040,
+      "text": "Put your hands up, hands up, hands up"
+    },
+    {
+      "index": 1,
+      "timestamp": "00:10.42",
+      "timeSeconds": 10.42,
+      "timeMs": 10420,
+      "text": "I've been tryna call"
+    },
+    {
+      "index": 2,
+      "timestamp": "00:13.37",
+      "timeSeconds": 13.37,
+      "timeMs": 13370,
+      "text": "I've been on my own for long enough"
+    },
+    {
+      "index": 3,
+      "timestamp": "00:16.01",
+      "timeSeconds": 16.01,
+      "timeMs": 16010,
+      "text": "Maybe you can show me how to love, maybe"
+    },
+    {
+      "index": 4,
+      "timestamp": "00:21.73",
+      "timeSeconds": 21.73,
+      "timeMs": 21730,
+      "text": "I'm going through withdrawals"
+    },
+    {
+      "index": 5,
+      "timestamp": "00:24.45",
+      "timeSeconds": 24.45,
+      "timeMs": 24450,
+      "text": "You don't even have to do too much"
+    },
+    {
+      "index": 6,
+      "timestamp": "00:27.35",
+      "timeSeconds": 27.35,
+      "timeMs": 27350,
+      "text": "You can turn me on with just a touch, baby"
+    },
+    {
+      "index": 7,
+      "timestamp": "00:32.91",
+      "timeSeconds": 32.91,
+      "timeMs": 32910,
+      "text": "I look around and"
+    },
+    {
+      "index": 8,
+      "timestamp": "00:34.05",
+      "timeSeconds": 34.05,
+      "timeMs": 34050,
+      "text": "Sin City's cold and empty (Oh)"
+    },
+    {
+      "index": 9,
+      "timestamp": "00:36.79",
+      "timeSeconds": 36.79,
+      "timeMs": 36790,
+      "text": "No one's around to judge me (Oh)"
+    },
+    {
+      "index": 10,
+      "timestamp": "00:39.54",
+      "timeSeconds": 39.54,
+      "timeMs": 39540,
+      "text": "I can't see clearly when you're gone"
+    },
+    {
+      "index": 11,
+      "timestamp": "00:44.36",
+      "timeSeconds": 44.36,
+      "timeMs": 44360,
+      "text": "I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 12,
+      "timestamp": "00:50.26",
+      "timeSeconds": 50.26,
+      "timeMs": 50260,
+      "text": "No, I can't sleep until I feel your touch"
+    },
+    {
+      "index": 13,
+      "timestamp": "00:55.39",
+      "timeSeconds": 55.39,
+      "timeMs": 55390,
+      "text": "I said, ooh, I'm drowning in the night"
+    },
+    {
+      "index": 14,
+      "timestamp": "01:01.53",
+      "timeSeconds": 61.53,
+      "timeMs": 61530,
+      "text": "Oh, when I'm like this, you're the one I trust"
+    },
+    {
+      "index": 15,
+      "timestamp": "01:06.16",
+      "timeSeconds": 66.16,
+      "timeMs": 66160,
+      "text": "Hey"
+    },
+    {
+      "index": 16,
+      "timestamp": "01:06.77",
+      "timeSeconds": 66.77,
+      "timeMs": 66770,
+      "text": "Hey"
+    },
+    {
+      "index": 17,
+      "timestamp": "01:07.46",
+      "timeSeconds": 67.46,
+      "timeMs": 67460,
+      "text": "Hey"
+    },
+    {
+      "index": 18,
+      "timestamp": "01:28.96",
+      "timeSeconds": 88.96,
+      "timeMs": 88960,
+      "text": "I'm running out of time"
+    },
+    {
+      "index": 19,
+      "timestamp": "01:32.20",
+      "timeSeconds": 92.2,
+      "timeMs": 92200,
+      "text": "'Cause I can see the sun light up the sky"
+    },
+    {
+      "index": 20,
+      "timestamp": "01:35.17",
+      "timeSeconds": 95.17,
+      "timeMs": 95170,
+      "text": "So I hit the road in overdrive, baby, oh"
+    },
+    {
+      "index": 21,
+      "timestamp": "01:41.63",
+      "timeSeconds": 101.63,
+      "timeMs": 101630,
+      "text": "The city's cold and empty (Oh)"
+    },
+    {
+      "index": 22,
+      "timestamp": "01:44.60",
+      "timeSeconds": 104.6,
+      "timeMs": 104600,
+      "text": "No one's around to judge me (Oh)"
+    },
+    {
+      "index": 23,
+      "timestamp": "01:47.37",
+      "timeSeconds": 107.37,
+      "timeMs": 107370,
+      "text": "I can't see clearly when you're gone"
+    },
+    {
+      "index": 24,
+      "timestamp": "01:52.05",
+      "timeSeconds": 112.05,
+      "timeMs": 112050,
+      "text": "I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 25,
+      "timestamp": "01:58.12",
+      "timeSeconds": 118.12,
+      "timeMs": 118120,
+      "text": "No, I can't sleep until I feel your touch"
+    },
+    {
+      "index": 26,
+      "timestamp": "02:03.30",
+      "timeSeconds": 123.3,
+      "timeMs": 123300,
+      "text": "I said, ooh, I'm drowning in the night"
+    },
+    {
+      "index": 27,
+      "timestamp": "02:09.25",
+      "timeSeconds": 129.25,
+      "timeMs": 129250,
+      "text": "Oh, when I'm like this, you're the one I trust (Hey, hey, hey)"
+    },
+    {
+      "index": 28,
+      "timestamp": "02:19.01",
+      "timeSeconds": 139.01,
+      "timeMs": 139010,
+      "text": "Hey, hey, hey, hey"
+    },
+    {
+      "index": 29,
+      "timestamp": "02:32.57",
+      "timeSeconds": 152.57,
+      "timeMs": 152570,
+      "text": "Hey, hey, hey, hey"
+    },
+    {
+      "index": 30,
+      "timestamp": "02:46.31",
+      "timeSeconds": 166.31,
+      "timeMs": 166310,
+      "text": "Hey, hey, hey, hey"
+    },
+    {
+      "index": 31,
+      "timestamp": "03:00.17",
+      "timeSeconds": 180.17,
+      "timeMs": 180170,
+      "text": "Hey, hey, hey, hey"
+    }
+  ],
+  "rawLrc": "[00:07.04] Put your hands up, hands up, hands up\n[00:10.42] I've been tryna call\n[00:13.37] I've been on my own for long enough\n[00:16.01] Maybe you can show me how to love, maybe\n[00:21.73] I'm going through withdrawals\n[00:24.45] You don't even have to do too much\n[00:27.35] You can turn me on with just a touch, baby\n[00:32.91] I look around and\n[00:34.05] Sin City's cold and empty (Oh)\n[00:36.79] No one's around to judge me (Oh)\n[00:39.54] I can't see clearly when you're gone\n[00:44.36] I said, ooh, I'm blinded by the lights\n[00:50.26] No, I can't sleep until I feel your touch\n[00:55.39] I said, ooh, I'm drowning in the night\n[01:01.53] Oh, when I'm like this, you're the one I trust\n[01:06.16] Hey\n[01:06.77] Hey\n[01:07.46] Hey\n[01:09.68] \n[01:28.96] I'm running out of time\n[01:32.20] 'Cause I can see the sun light up the sky\n[01:35.17] So I hit the road in overdrive, baby, oh\n[01:41.63] The city's cold and empty (Oh)\n[01:44.60] No one's around to judge me (Oh)\n[01:47.37] I can't see clearly when you're gone\n[01:52.05] I said, ooh, I'm blinded by the lights\n[01:58.12] No, I can't sleep until I feel your touch\n[02:03.30] I said, ooh, I'm drowning in the night\n[02:09.25] Oh, when I'm like this, you're the one I trust (Hey, hey, hey)\n[02:19.01] Hey, hey, hey, hey\n[02:22.52] \n[02:32.57] Hey, hey, hey, hey\n[02:36.44] \n[02:46.31] Hey, hey, hey, hey\n[02:49.97] \n[03:00.17] Hey, hey, hey, hey\n[03:01.25] ",
+  "plainLyrics": "Put your hands up, hands up, hands up\n\nI've been tryna call\nI've been on my own for long enough\nMaybe you can show me how to love, maybe\nI'm going through withdrawals\nYou don't even have to do too much\nYou can turn me on with just a touch, baby\n\nI look around and\nSin City's cold and empty (Oh)\nNo one's around to judge me (Oh)\nI can't see clearly when you're gone\n\nI said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch\nI said, ooh, I'm drowning in the night\nOh, when I'm like this, you're the one I trust\nHey\nHey\nHey\n\nI'm running out of time\n'Cause I can see the sun light up the sky\nSo I hit the road in overdrive, baby, oh\n\nThe city's cold and empty (Oh)\nNo one's around to judge me (Oh)\nI can't see clearly when you're gone\n\nI said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch\nI said, ooh, I'm drowning in the night\nOh, when I'm like this, you're the one I trust (Hey, hey, hey)\n\nHey, hey, hey, hey\nHey, hey, hey, hey\nHey, hey, hey, hey\nHey, hey, hey, hey"
+}

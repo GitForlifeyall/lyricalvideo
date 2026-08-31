@@ -1,0 +1,246 @@
+{
+  "id": 37138467,
+  "trackName": "Blinding Lights",
+  "artistName": "Teddy Swims",
+  "albumName": "Blinding Lights",
+  "duration": 199,
+  "instrumental": false,
+  "hasSyncedLyrics": true,
+  "savedAt": "2026-08-31T18:35:45.552Z",
+  "totalLines": 33,
+  "syncedLines": [
+    {
+      "index": 0,
+      "timestamp": "00:29.47",
+      "timeSeconds": 29.47,
+      "timeMs": 29470,
+      "text": "I been tryna call"
+    },
+    {
+      "index": 1,
+      "timestamp": "00:32.38",
+      "timeSeconds": 32.38,
+      "timeMs": 32380,
+      "text": "I been on my own for long enough"
+    },
+    {
+      "index": 2,
+      "timestamp": "00:35.55",
+      "timeSeconds": 35.55,
+      "timeMs": 35550,
+      "text": "Maybe you can show me how to love, maybe"
+    },
+    {
+      "index": 3,
+      "timestamp": "00:41.16",
+      "timeSeconds": 41.16,
+      "timeMs": 41160,
+      "text": "I'm going through withdrawals"
+    },
+    {
+      "index": 4,
+      "timestamp": "00:44.40",
+      "timeSeconds": 44.4,
+      "timeMs": 44400,
+      "text": "You don't even have to do too much"
+    },
+    {
+      "index": 5,
+      "timestamp": "00:47.48",
+      "timeSeconds": 47.48,
+      "timeMs": 47480,
+      "text": "You can turn me on with just a touch, baby"
+    },
+    {
+      "index": 6,
+      "timestamp": "00:53.34",
+      "timeSeconds": 53.34,
+      "timeMs": 53340,
+      "text": "I look around and Sin City's cold and empty"
+    },
+    {
+      "index": 7,
+      "timestamp": "00:57.31",
+      "timeSeconds": 57.31,
+      "timeMs": 57310,
+      "text": "No one around to judge me"
+    },
+    {
+      "index": 8,
+      "timestamp": "01:00.58",
+      "timeSeconds": 60.58,
+      "timeMs": 60580,
+      "text": "I can't see clearly when you're gone"
+    },
+    {
+      "index": 9,
+      "timestamp": "01:05.16",
+      "timeSeconds": 65.16,
+      "timeMs": 65160,
+      "text": "And I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 10,
+      "timestamp": "01:11.63",
+      "timeSeconds": 71.63,
+      "timeMs": 71630,
+      "text": "No, I can't sleep until I feel your touch"
+    },
+    {
+      "index": 11,
+      "timestamp": "01:17.21",
+      "timeSeconds": 77.21,
+      "timeMs": 77210,
+      "text": "And I said, ooh, I'm drowning in the night"
+    },
+    {
+      "index": 12,
+      "timestamp": "01:23.95",
+      "timeSeconds": 83.95,
+      "timeMs": 83950,
+      "text": "Oh, when I'm like this, you're the one I trust"
+    },
+    {
+      "index": 13,
+      "timestamp": "01:28.22",
+      "timeSeconds": 88.22,
+      "timeMs": 88220,
+      "text": "Hey, hey, hey"
+    },
+    {
+      "index": 14,
+      "timestamp": "01:41.38",
+      "timeSeconds": 101.38,
+      "timeMs": 101380,
+      "text": "I'm running out of time"
+    },
+    {
+      "index": 15,
+      "timestamp": "01:44.22",
+      "timeSeconds": 104.22,
+      "timeMs": 104220,
+      "text": "'Cause I can see the sun light up the sky"
+    },
+    {
+      "index": 16,
+      "timestamp": "01:47.47",
+      "timeSeconds": 107.47,
+      "timeMs": 107470,
+      "text": "So I hit the road in overdrive, baby"
+    },
+    {
+      "index": 17,
+      "timestamp": "01:53.08",
+      "timeSeconds": 113.08,
+      "timeMs": 113080,
+      "text": "Oh, the city's cold and empty"
+    },
+    {
+      "index": 18,
+      "timestamp": "01:57.60",
+      "timeSeconds": 117.6,
+      "timeMs": 117600,
+      "text": "No one around to judge me"
+    },
+    {
+      "index": 19,
+      "timestamp": "02:00.48",
+      "timeSeconds": 120.48,
+      "timeMs": 120480,
+      "text": "I can't see clearly when you're gone"
+    },
+    {
+      "index": 20,
+      "timestamp": "02:05.20",
+      "timeSeconds": 125.2,
+      "timeMs": 125200,
+      "text": "And I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 21,
+      "timestamp": "02:11.64",
+      "timeSeconds": 131.64,
+      "timeMs": 131640,
+      "text": "No, I can't sleep until I feel your touch"
+    },
+    {
+      "index": 22,
+      "timestamp": "02:16.91",
+      "timeSeconds": 136.91,
+      "timeMs": 136910,
+      "text": "And I said, ooh, I'm drowning in the night"
+    },
+    {
+      "index": 23,
+      "timestamp": "02:23.81",
+      "timeSeconds": 143.81,
+      "timeMs": 143810,
+      "text": "Oh, when I'm like this, you're the one I trust"
+    },
+    {
+      "index": 24,
+      "timestamp": "02:29.19",
+      "timeSeconds": 149.19,
+      "timeMs": 149190,
+      "text": "I'm just walking by to let you know (By to let you know)"
+    },
+    {
+      "index": 25,
+      "timestamp": "02:32.60",
+      "timeSeconds": 152.6,
+      "timeMs": 152600,
+      "text": "I can never say it on the phone (Say it on the phone)"
+    },
+    {
+      "index": 26,
+      "timestamp": "02:35.85",
+      "timeSeconds": 155.85,
+      "timeMs": 155850,
+      "text": "Will never let you go this time"
+    },
+    {
+      "index": 27,
+      "timestamp": "02:41.35",
+      "timeSeconds": 161.35,
+      "timeMs": 161350,
+      "text": "I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 28,
+      "timestamp": "02:47.76",
+      "timeSeconds": 167.76,
+      "timeMs": 167760,
+      "text": "No, I can't sleep until I feel your touch"
+    },
+    {
+      "index": 29,
+      "timestamp": "02:52.35",
+      "timeSeconds": 172.35,
+      "timeMs": 172350,
+      "text": "Hey, hey, hey"
+    },
+    {
+      "index": 30,
+      "timestamp": "03:04.69",
+      "timeSeconds": 184.69,
+      "timeMs": 184690,
+      "text": "Hey, hey, hey"
+    },
+    {
+      "index": 31,
+      "timestamp": "03:16.92",
+      "timeSeconds": 196.92,
+      "timeMs": 196920,
+      "text": "And I said, ooh, I'm blinded by the lights"
+    },
+    {
+      "index": 32,
+      "timestamp": "03:23.72",
+      "timeSeconds": 203.72,
+      "timeMs": 203720,
+      "text": "No, I can't sleep until I feel your touch"
+    }
+  ],
+  "rawLrc": "[00:29.47] I been tryna call\n[00:32.38] I been on my own for long enough\n[00:35.55] Maybe you can show me how to love, maybe\n[00:41.16] I'm going through withdrawals\n[00:44.40] You don't even have to do too much\n[00:47.48] You can turn me on with just a touch, baby\n[00:53.34] I look around and Sin City's cold and empty\n[00:57.31] No one around to judge me\n[01:00.58] I can't see clearly when you're gone\n[01:05.16] And I said, ooh, I'm blinded by the lights\n[01:11.63] No, I can't sleep until I feel your touch\n[01:17.21] And I said, ooh, I'm drowning in the night\n[01:23.95] Oh, when I'm like this, you're the one I trust\n[01:28.22] Hey, hey, hey\n[01:30.27] \n[01:41.38] I'm running out of time\n[01:44.22] 'Cause I can see the sun light up the sky\n[01:47.47] So I hit the road in overdrive, baby\n[01:53.08] Oh, the city's cold and empty\n[01:57.60] No one around to judge me\n[02:00.48] I can't see clearly when you're gone\n[02:05.20] And I said, ooh, I'm blinded by the lights\n[02:11.64] No, I can't sleep until I feel your touch\n[02:16.91] And I said, ooh, I'm drowning in the night\n[02:23.81] Oh, when I'm like this, you're the one I trust\n[02:29.19] I'm just walking by to let you know (By to let you know)\n[02:32.60] I can never say it on the phone (Say it on the phone)\n[02:35.85] Will never let you go this time\n[02:41.35] I said, ooh, I'm blinded by the lights\n[02:47.76] No, I can't sleep until I feel your touch\n[02:52.35] Hey, hey, hey\n[02:54.42] \n[03:04.69] Hey, hey, hey\n[03:06.37] \n[03:16.92] And I said, ooh, I'm blinded by the lights\n[03:23.72] No, I can't sleep until I feel your touch\n[03:29.23] ",
+  "plainLyrics": "I been tryna call\nI been on my own for long enough\nMaybe you can show me how to love, maybe\nI'm going through withdrawals\nYou don't even have to do too much\nYou can turn me on with just a touch, baby\n\nI look around and Sin City's cold and empty\nNo one around to judge me\nI can't see clearly when you're gone\n\nAnd I said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch\nAnd I said, ooh, I'm drowning in the night\nOh, when I'm like this, you're the one I trust\nHey, hey, hey\n\nI'm running out of time\n'Cause I can see the sun light up the sky\nSo I hit the road in overdrive, baby\n\nOh, the city's cold and empty\nNo one around to judge me\nI can't see clearly when you're gone\n\nAnd I said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch\nAnd I said, ooh, I'm drowning in the night\nOh, when I'm like this, you're the one I trust\n\nI'm just walking by to let you know (By to let you know)\nI can never say it on the phone (Say it on the phone)\nWill never let you go this time\n\nI said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch\nHey, hey, hey\n\nHey, hey, hey\n\nAnd I said, ooh, I'm blinded by the lights\nNo, I can't sleep until I feel your touch"
+}

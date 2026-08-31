@@ -67,6 +67,52 @@
               <span class="template-num">Temp 3</span>
               <span class="template-desc">🖥️ 16:9 Cinematic (YouTube Landscape)</span>
             </button>
+            <button type="button" class="template-pill" data-template="template4_brat" id="btn-template-brat">
+              <span class="template-num" style="background: #8ace00; color: #000000; font-weight: 900;">Brat</span>
+              <span class="template-desc">🟩 9:16 Brat Minimal (Charli XCX)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Brat Aesthetic Palette & Live Reflow Sandbox (Appears for Brat Template) -->
+        <div class="control-row" id="brat-options-row" style="display: none;">
+          <span class="control-label">🟩 Brat Theme:</span>
+          <div class="brat-palettes-group" id="brat-palettes-group">
+            <button type="button" class="brat-swatch-btn active" data-theme="green" title="Classic Brat Lime">
+              <span class="swatch-circle" style="background: #8ACE00; border: 2px solid #000;"></span>
+              <span class="swatch-name">Brat Lime</span>
+            </button>
+            <button type="button" class="brat-swatch-btn" data-theme="white" title="Brat White (Deluxe)">
+              <span class="swatch-circle" style="background: #FFFFFF; border: 2px solid #000;"></span>
+              <span class="swatch-name">Brat White</span>
+            </button>
+            <button type="button" class="brat-swatch-btn" data-theme="red" title="The Moment (Red / Blue)">
+              <span class="swatch-circle" style="background: #FF0000; border: 2px solid #0000FF;"></span>
+              <span class="swatch-name">The Moment</span>
+            </button>
+            <button type="button" class="brat-swatch-btn" data-theme="black" title="Brat Black">
+              <span class="swatch-circle" style="background: #000000; border: 2px solid #FFF;"></span>
+              <span class="swatch-name">Brat Black</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Brat Live Reflow Sandbox Card (Interactive 1:1 Live Canvas) -->
+        <div class="brat-live-sandbox" id="brat-live-sandbox" style="display: none;">
+          <div class="sandbox-header">
+            <div class="sandbox-title">
+              <span class="sandbox-badge">1:1 LIVE CANVAS</span>
+              <span>Charli XCX "Brat" Real-Time Reflow Preview</span>
+            </div>
+            <span class="sandbox-hint">Type or watch lyrics dynamically wrap &amp; re-center</span>
+          </div>
+          <div class="brat-canvas-wrapper" id="brat-canvas-wrapper">
+            <div class="brat-container theme-brat-green" id="brat-live-container">
+              <span id="brat-live-text">365 partygirl</span>
+            </div>
+          </div>
+          <div class="sandbox-input-bar">
+            <input type="text" id="brat-sandbox-input" class="brat-input-field" placeholder="Type words here to test live dynamic reflow scaling..." value="365 partygirl" />
           </div>
         </div>
 
@@ -75,6 +121,7 @@
           <span class="control-label">🔤 Font / Style:</span>
           <div class="pill-group font-pill-group" id="font-group">
             <button type="button" class="pill-btn font-pill active" data-font="Impact" style="font-family: Impact, sans-serif;">Impact</button>
+            <button type="button" class="pill-btn font-pill" data-font="Arial Narrow" style="font-family: 'Arial Narrow', Arial, sans-serif;">Arial Narrow (Brat)</button>
             <button type="button" class="pill-btn font-pill" data-font="Montserrat" style="font-family: Montserrat, sans-serif;">Montserrat</button>
             <button type="button" class="pill-btn font-pill" data-font="Arial" style="font-family: Arial, sans-serif;">Arial</button>
             <button type="button" class="pill-btn font-pill" data-font="Segoe UI" style="font-family: 'Segoe UI', sans-serif;">Segoe UI</button>
@@ -212,6 +259,7 @@
         <!-- Transparency Backdrop Switcher -->
         <div class="backdrop-switcher">
           <span class="switcher-label">Preview Backdrop:</span>
+          <button class="backdrop-btn" data-bg="brat" title="Charli XCX Brat Lime">🟩 Brat</button>
           <button class="backdrop-btn active" data-bg="checkerboard" title="Checkerboard (Alpha Transparency)">🏁 Alpha</button>
           <button class="backdrop-btn" data-bg="cyberpunk" title="Cyberpunk Gradient">🌌 Cyber</button>
           <button class="backdrop-btn" data-bg="city" title="Night City Wallpaper">🌆 City</button>

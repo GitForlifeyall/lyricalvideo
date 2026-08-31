@@ -12,6 +12,7 @@ const state = {
   language: 'auto',
   placement: 'center',
   ypos: 50,
+  bratTheme: 'green',
   lastQuery: 'The Weeknd - Blinding Lights'
 };
 
@@ -25,6 +26,14 @@ const fontBtns = document.querySelectorAll('#font-group .font-pill');
 const customFontInput = document.getElementById('custom-font-input');
 const langBtns = document.querySelectorAll('#lang-group .lang-pill');
 const customLangInput = document.getElementById('custom-lang-input');
+
+// Brat controls & live sandbox
+const bratOptionsRow = document.getElementById('brat-options-row');
+const bratPalettes = document.querySelectorAll('#brat-palettes-group .brat-swatch-btn');
+const bratLiveSandbox = document.getElementById('brat-live-sandbox');
+const bratLiveContainer = document.getElementById('brat-live-container');
+const bratLiveText = document.getElementById('brat-live-text');
+const bratSandboxInput = document.getElementById('brat-sandbox-input');
 
 // Placement controls
 const placementPills = document.querySelectorAll('#placement-group .placement-pill');
@@ -105,15 +114,47 @@ function setupEventListeners() {
     }
   });
 
-  // Template Selection (Template 1, 2, 3)
+  // Template Selection (Template 1, 2, 3, 4 Brat)
   templatePills.forEach((pill) => {
     pill.addEventListener('click', () => {
       templatePills.forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
       state.template = pill.dataset.template;
-      showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
+
+      if (pill.dataset.template === 'template4_brat') {
+        if (bratOptionsRow) bratOptionsRow.style.display = 'flex';
+        if (bratLiveSandbox) bratLiveSandbox.style.display = 'flex';
+        state.fontFamily = 'Arial Narrow';
+        fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'Arial Narrow'));
+        updateBratText(bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
+        showToast('Activated 🟩 Brat Minimal Template (Charli XCX)');
+      } else {
+        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
+        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
+        showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
+      }
     });
   });
+
+  // Brat Palette Swatches
+  bratPalettes.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      bratPalettes.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.bratTheme = btn.dataset.theme;
+      if (bratLiveContainer) {
+        bratLiveContainer.className = `brat-container theme-brat-${state.bratTheme}`;
+      }
+      showToast(`Brat Theme: ${btn.querySelector('.swatch-name').textContent.trim()}`);
+    });
+  });
+
+  // Brat Live Reflow Sandbox Input
+  if (bratSandboxInput) {
+    bratSandboxInput.addEventListener('input', (e) => {
+      updateBratText(e.target.value);
+    });
+  }
 
   // Font Selection
   fontBtns.forEach((btn) => {
@@ -240,6 +281,23 @@ function setupEventListeners() {
   });
 }
 
+function updateBratText(text) {
+  if (!bratLiveText || !bratLiveContainer) return;
+  const clean = (text || '365 partygirl').toLowerCase().trim();
+  bratLiveText.textContent = clean;
+  
+  // Authentic Charli XCX Brat dynamic text scaling reflow algorithm
+  const len = clean.length;
+  let fs = '3.5rem';
+  if (len <= 8) fs = '4.6rem';
+  else if (len <= 15) fs = '3.8rem';
+  else if (len <= 24) fs = '3.0rem';
+  else if (len <= 38) fs = '2.3rem';
+  else fs = '1.75rem';
+
+  bratLiveContainer.style.fontSize = fs;
+}
+
 function updatePlacementPills(place) {
   placementPills.forEach(p => p.classList.toggle('active', p.dataset.placement === place));
   stagePlacementBtns.forEach(b => b.classList.toggle('active', b.dataset.placement === place));
@@ -268,8 +326,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, language, placement, and ypos parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}`;
+  // Connect to SSE Endpoint with template, font, language, placement, ypos, and brat_theme parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&brat_theme=${encodeURIComponent(state.bratTheme)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -470,11 +528,15 @@ function syncTeleprompter(currentTime) {
 
     if (activeIndex >= 0 && allRows[activeIndex]) {
       allRows[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+      // If brat preview is active, update live reflow text
+      if (state.template === 'template4_brat' && state.syncedLines[activeIndex]) {
+        updateBratText(state.syncedLines[activeIndex].text);
+      }
     }
   }
 }
 
-// 6. Backdrop Switcher (Demonstrating Alpha Channel Transparency)
+// 6. Backdrop Switcher (Demonstrating Alpha Channel & Brat Background)
 function setBackdrop(bgType) {
   state.currentBackdrop = bgType;
   backdropBtns.forEach((btn) => {

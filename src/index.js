@@ -112,6 +112,7 @@ app.get('/api/generate-video-stream', (req, res) => {
   const lang = req.query.lang || 'auto';
   const placement = req.query.placement || 'center';
   const ypos = req.query.ypos || '50';
+  const bratTheme = req.query.brat_theme || 'green';
 
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonArgs = [
@@ -123,6 +124,7 @@ app.get('/api/generate-video-stream', (req, res) => {
     `--lang=${lang}`,
     `--placement=${placement}`,
     `--ypos=${ypos}`,
+    `--brat-theme=${bratTheme}`,
     '--json-progress'
   ];
   if (font) {

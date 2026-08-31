@@ -430,6 +430,38 @@ def seconds_to_lrc_timestamp(total_seconds: float) -> str:
     return f"{m:02d}:{s:02d}.{cs:02d}"
 
 
+BRAT_THEMES = {
+    "green": {
+        "name": "Brat Lime",
+        "bg_color": "0x8ACE00",
+        "text_color": "&H00000000",
+        "hex_bg": "#8ACE00",
+        "hex_text": "#000000",
+    },
+    "white": {
+        "name": "Brat White",
+        "bg_color": "0xFFFFFF",
+        "text_color": "&H00000000",
+        "hex_bg": "#FFFFFF",
+        "hex_text": "#000000",
+    },
+    "red": {
+        "name": "The Moment (Red/Blue)",
+        "bg_color": "0xFF0000",
+        "text_color": "&H00FF0000",
+        "hex_bg": "#FF0000",
+        "hex_text": "#0000FF",
+    },
+    "black": {
+        "name": "Brat Black",
+        "bg_color": "0x000000",
+        "text_color": "&H00FFFFFF",
+        "hex_bg": "#000000",
+        "hex_text": "#FFFFFF",
+    }
+}
+
+
 TEMPLATES = {
     "template1": {
         "id": "template1",
@@ -444,6 +476,10 @@ TEMPLATES = {
         "outline_width": 4,
         "shadow_depth": 3,
         "margin_v": 440,
+        "bg_color": "black",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
     },
     "template2": {
         "id": "template2",
@@ -458,6 +494,10 @@ TEMPLATES = {
         "outline_width": 3,
         "shadow_depth": 2,
         "margin_v": 420,
+        "bg_color": "black",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
     },
     "template3": {
         "id": "template3",
@@ -472,6 +512,28 @@ TEMPLATES = {
         "outline_width": 3,
         "shadow_depth": 2,
         "margin_v": 80,
+        "bg_color": "black",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
+    },
+    "template4_brat": {
+        "id": "template4_brat",
+        "name": "Template 4 (Brat Minimal)",
+        "aspect_ratio": "portrait",
+        "font_name": "Arial Narrow",
+        "font_size": 86,
+        "primary_color": "&H00000000",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": -1,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 0,
+        "bg_color": "0x8ACE00",
+        "scale_x": 90,
+        "blur": 1.4,
+        "force_lowercase": True,
     }
 }
 
@@ -486,17 +548,30 @@ def build_ass_and_lrc_content(
     font_size: Optional[int] = None,
     template_key: Optional[str] = "template1",
     placement: str = "center",
-    y_percent: Optional[float] = 50.0
+    y_percent: Optional[float] = 50.0,
+    brat_theme: str = "green"
 ) -> Tuple[str, List[Dict[str, Any]], str]:
     """
-    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3),
-    custom typography, and interactive dynamic placement (Center default).
+    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3, 4 Brat),
+    custom typography, dynamic reflow, and interactive dynamic placement (Center default).
     """
-    tpl = TEMPLATES.get((template_key or "").lower(), TEMPLATES["template1"])
-    effective_aspect = aspect_ratio or tpl["aspect_ratio"]
-    effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
+    tpl_id = (template_key or "").lower().strip()
+    if tpl_id in ["template4", "brat", "template_brat", "template4_brat"]:
+        tpl = TEMPLATES["template4_brat"]
+        is_brat = True
+    else:
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
+        is_brat = False
 
+    effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     is_portrait = (effective_aspect.lower() == "portrait" or effective_aspect == "9:16")
+
+    # Font handling
+    if is_brat:
+        effective_font = "Arial Narrow" if not font_name or font_name == "Impact" else font_name
+    else:
+        effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
+
     emit_progress("ass_start", 60, f"Step 2: Applying {tpl['name']} ({'Portrait 9:16' if is_portrait else 'Landscape 16:9'}) with '{placement}' placement...")
 
     if not cues:
@@ -508,8 +583,8 @@ def build_ass_and_lrc_content(
     if is_portrait:
         res_x = 1080
         res_y = 1920
-        margin_l = 70
-        margin_r = 70
+        margin_l = 80
+        margin_r = 80
         outline_width = tpl.get("outline_width", 4)
         shadow_depth = tpl.get("shadow_depth", 3)
     else:
@@ -541,11 +616,24 @@ def build_ass_and_lrc_content(
         target_y = int(res_y * (y_pos_val / 100.0))
         pos_override_tag = f"{{\\an5\\pos({res_x // 2},{target_y})}}"
 
+    # Brat theme styling
+    if is_brat:
+        b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
+        primary_color = b_theme["text_color"]
+        outline_color = "&H00000000"
+        back_color = "&H00000000"
+        bold_val = -1
+        scale_x_val = 90
+        blur_val = 1.4
+    else:
+        primary_color = tpl.get("primary_color", "&H00FFFFFF")
+        outline_color = tpl.get("outline_color", "&H00000000")
+        back_color = tpl.get("back_color", "&H80000000")
+        bold_val = tpl.get("bold", -1)
+        scale_x_val = tpl.get("scale_x", 100)
+        blur_val = tpl.get("blur", 0.0)
+
     actual_font_size = font_size if font_size and font_size > 0 else tpl.get("font_size", 54)
-    primary_color = tpl.get("primary_color", "&H00FFFFFF")
-    outline_color = tpl.get("outline_color", "&H00000000")
-    back_color = tpl.get("back_color", "&H80000000")
-    bold_val = tpl.get("bold", -1)
 
     ass_header = f"""[Script Info]
 ; Script generated by YouTube Lyric-Video Overlay Generator
@@ -557,7 +645,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,100,100,0,0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
+Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,{scale_x_val},100,0,0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -605,7 +693,24 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 adjusted_end = adjusted_start + 0.8
 
         clean_text = text.replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\\N", " ").strip()
-        dialogue_text = f"{pos_override_tag}{clean_text}" if pos_override_tag else clean_text
+
+        # Brat Aesthetic: 100% lowercase, dynamic font-size scaling, and authentic digital blur
+        if is_brat:
+            clean_text = clean_text.lower()
+            char_count = len(clean_text)
+            if char_count > 36:
+                line_fs = 58
+            elif char_count > 22:
+                line_fs = 72
+            elif char_count > 12:
+                line_fs = 84
+            else:
+                line_fs = 96
+            brat_inline_tag = f"{{\\fs{line_fs}\\blur1.4}}"
+            dialogue_text = f"{pos_override_tag}{brat_inline_tag}{clean_text}" if pos_override_tag else f"{brat_inline_tag}{clean_text}"
+        else:
+            dialogue_text = f"{pos_override_tag}{clean_text}" if pos_override_tag else clean_text
+
         dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
         ts_formatted = seconds_to_lrc_timestamp(adjusted_start)
@@ -646,7 +751,8 @@ def render_lyric_video_ffmpeg(
     ass_path: str,
     output_path: str = "output_lyric_video.mp4",
     duration: Optional[float] = None,
-    aspect_ratio: str = "portrait"
+    aspect_ratio: str = "portrait",
+    bg_color: str = "black"
 ) -> str:
     """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video with GPU Acceleration."""
     if not duration or duration <= 0:
@@ -656,7 +762,7 @@ def render_lyric_video_ffmpeg(
     res_str = "1080x1920" if is_portrait else "1920x1080"
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
-    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video using {encoder_name} ({duration:.1f}s)...")
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video using {encoder_name} (BG: {bg_color}, {duration:.1f}s)...")
     
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
@@ -665,7 +771,7 @@ def render_lyric_video_ffmpeg(
     ffmpeg_cmd = [
         "ffmpeg", "-y",
         "-threads", "0",
-        "-f", "lavfi", "-i", f"color=c=black:s={res_str}:r=30:d={duration:.2f}",
+        "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_str}:r=30:d={duration:.2f}",
         "-i", audio_path,
         "-vf", f"ass={normalized_ass}",
         "-c:v", encoder_name,
@@ -696,10 +802,21 @@ def generate_lyric_video(
     lang: str = "auto",
     template: str = "template1",
     placement: str = "center",
-    y_percent: Optional[float] = 50.0
+    y_percent: Optional[float] = 50.0,
+    brat_theme: str = "green"
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Templates, Fonts, Languages, and Interactive Placement (Center default)."""
-    tpl = TEMPLATES.get((template or "").lower(), TEMPLATES["template1"])
+    """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat), Fonts, Languages, and Interactive Placement."""
+    tpl_id = (template or "").lower().strip()
+    if tpl_id in ["template4", "brat", "template_brat", "template4_brat"]:
+        tpl = TEMPLATES["template4_brat"]
+        is_brat = True
+        b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
+        bg_color = b_theme["bg_color"]
+    else:
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
+        is_brat = False
+        bg_color = tpl.get("bg_color", "black")
+
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
 
@@ -723,7 +840,8 @@ def generate_lyric_video(
         font_size=font_size,
         template_key=template,
         placement=placement,
-        y_percent=y_percent
+        y_percent=y_percent,
+        brat_theme=brat_theme
     )
 
     render_lyric_video_ffmpeg(
@@ -731,7 +849,8 @@ def generate_lyric_video(
         ass_path=ass_path,
         output_path=output_path,
         duration=duration,
-        aspect_ratio=effective_aspect
+        aspect_ratio=effective_aspect,
+        bg_color=bg_color
     )
 
     final_result = {
@@ -746,6 +865,8 @@ def generate_lyric_video(
         "aspect_ratio": effective_aspect,
         "font_name": effective_font,
         "template": template,
+        "brat_theme": brat_theme if is_brat else None,
+        "bg_color": bg_color,
         "placement": placement,
         "y_percent": y_percent,
         "language": yt_data.get("matched_lang", lang),
@@ -771,6 +892,7 @@ if __name__ == "__main__":
     template = "template1"
     placement = "center"
     ypos = 50.0
+    brat_theme = "green"
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -798,6 +920,8 @@ if __name__ == "__main__":
                 ypos = float(a.split("=")[1])
             except ValueError:
                 pass
+        elif a.startswith("--brat-theme="):
+            brat_theme = a.split("=")[1].strip()
 
     res = generate_lyric_video(
         song_query=query,
@@ -809,7 +933,8 @@ if __name__ == "__main__":
         lang=lang,
         template=template,
         placement=placement,
-        y_percent=ypos
+        y_percent=ypos,
+        brat_theme=brat_theme
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

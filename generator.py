@@ -257,11 +257,16 @@ def render_lyric_video_ffmpeg(
         "-vf", f"ass={normalized_ass}",
         "-c:v", "libvpx-vp9",
         "-pix_fmt", "yuva420p",
-        "-c:a", "copy",
+        "-deadline", "realtime",
+        "-cpu-used", "8",
+        "-row-mt", "1",
+        "-c:a", "libopus",
+        "-b:a", "192k",
+        "-shortest",
         output_path
     ]
 
-    emit_progress("ffmpeg_rendering", 80, "Step 3: Encoding VP9 yuva420p alpha channel video...")
+    emit_progress("ffmpeg_rendering", 80, "Step 3: Encoding VP9 yuva420p alpha channel video with libopus audio...")
     subprocess.run(ffmpeg_cmd, check=True)
     emit_progress("ffmpeg_done", 95, f"Step 3: Video successfully rendered to '{output_path}'.")
     return output_path

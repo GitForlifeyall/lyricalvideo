@@ -107,12 +107,17 @@ app.get('/api/generate-video-stream', (req, res) => {
   const tempAssPath = path.join(VIDEOS_DIR, `${safeName}_temp.ass`);
 
   const offset = req.query.offset || '0.0';
+  const aspect = req.query.aspect || 'portrait';
+  const font = req.query.font || 'Impact';
+
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonProcess = spawn('python', [
     pythonScript,
     query,
     videoOutputPath,
     `--offset=${offset}`,
+    `--aspect=${aspect}`,
+    `--font=${font}`,
     '--json-progress'
   ], {
     cwd: path.join(__dirname, '..')

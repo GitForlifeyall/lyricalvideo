@@ -6,8 +6,10 @@ const state = {
   activeMetadata: null,
   syncedLines: [],
   currentLineIndex: -1,
-  currentBackdrop: 'checkerboard',
+  currentBackdrop: 'black',
   generationOffset: 0.0,
+  aspectRatio: 'portrait',
+  fontFamily: 'Impact',
 };
 
 // DOM Elements
@@ -17,6 +19,9 @@ const generateBtn = document.getElementById('generate-btn');
 const btnText = document.getElementById('btn-text');
 const presetChips = document.querySelectorAll('.preset-chip');
 const offsetChips = document.querySelectorAll('.offset-chip');
+const aspectBtns = document.querySelectorAll('#aspect-ratio-group .pill-btn');
+const fontBtns = document.querySelectorAll('#font-group .font-pill');
+const customFontInput = document.getElementById('custom-font-input');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -47,6 +52,7 @@ const consoleLineCount = document.getElementById('console-line-count');
 const studioStage = document.getElementById('studio-stage');
 const stageSongTitle = document.getElementById('stage-song-title');
 const stageSongMeta = document.getElementById('stage-song-meta');
+const videoPreviewWrapper = document.getElementById('video-preview-wrapper');
 const videoBackdrop = document.getElementById('video-backdrop');
 const outputVideoPlayer = document.getElementById('output-video-player');
 const videoSource = document.getElementById('video-source');
@@ -92,6 +98,38 @@ function setupEventListeners() {
     });
   });
 
+  // Aspect Ratio Selection (Portrait 9:16 vs Landscape 16:9)
+  aspectBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      aspectBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.aspectRatio = btn.dataset.aspect;
+      showToast(`Orientation set to ${btn.dataset.aspect.toUpperCase()}`);
+    });
+  });
+
+  // Font Selection
+  fontBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      fontBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.fontFamily = btn.dataset.font;
+      if (customFontInput) customFontInput.value = '';
+      showToast(`Font set to ${btn.dataset.font}`);
+    });
+  });
+
+  // Custom Font Input
+  if (customFontInput) {
+    customFontInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (val) {
+        fontBtns.forEach(b => b.classList.remove('active'));
+        state.fontFamily = val;
+      }
+    });
+  }
+
   // Offset chips
   offsetChips.forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -126,7 +164,7 @@ function startGenerationPipeline(query) {
 
   state.isGenerating = true;
   generateBtn.disabled = true;
-  btnText.textContent = 'Generating 1080p Overlay...';
+  btnText.textContent = 'Generating 1080p MP4...';
   generateBtn.classList.add('loading');
 
   // Reset & show pipeline UI
@@ -134,8 +172,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with timing offset parameter
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}`;
+  // Connect to SSE Endpoint with aspect ratio and font parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}&aspect=${encodeURIComponent(state.aspectRatio)}&font=${encodeURIComponent(state.fontFamily)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -216,11 +254,19 @@ function handleGenerationComplete(data) {
   state.activeMetadata = data.metadata;
   state.syncedLines = data.metadata?.syncedLines || [];
 
-  showToast('1080p Transparent Lyric Video Overlay Generated! 🚀');
+  showToast('1080p MP4 Lyric Video Generated! 🚀');
+
+  const isPortrait = (data.metadata?.aspect_ratio || state.aspectRatio) === 'portrait';
+  const fontUsed = data.metadata?.font_name || state.fontFamily;
 
   // Populate Studio Stage
   stageSongTitle.textContent = data.metadata?.track_name || data.query;
-  stageSongMeta.textContent = `${data.metadata?.artist_name || 'Transparent Overlay'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p 30fps`;
+  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; Font: ${fontUsed}`;
+
+  // Toggle Portrait frame styling on video container
+  if (videoPreviewWrapper) {
+    videoPreviewWrapper.classList.toggle('portrait-mode', isPortrait);
+  }
 
   // Set Video Player source
   outputVideoPlayer.pause();

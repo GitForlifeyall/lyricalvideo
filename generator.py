@@ -1,8 +1,7 @@
 """
-YouTube-Powered 1080p Transparent Lyric-Video Overlay Generator in Python
-Uses yt-dlp to extract high-quality audio and fetches direct YouTube timedtext subtitles
-without triggering HTTP 429 rate-limiting.
-Renders a 1080p 30fps VP9 yuva420p transparent video overlay using FFmpeg.
+YouTube-Powered 1080p MP4 Lyric-Video Overlay Generator in Python
+Supports Portrait (9:16 - 1080x1920) and Landscape (16:9 - 1920x1080) with Customizable Fonts.
+Renders high-quality 1080p 30fps H.264 / AAC MP4 video using FFmpeg.
 """
 
 import os
@@ -44,14 +43,10 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
 
 
 def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[float, float, str]]:
-    """
-    Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET
-    to prevent yt-dlp's internal subtitle downloader from triggering HTTP 429 rate limits.
-    """
+    """Directly fetches and parses YouTube timedtext JSON3/VTT subtitles via HTTP GET."""
     subtitles_dict = video_info.get("subtitles", {})
     auto_captions_dict = video_info.get("automatic_captions", {})
 
-    # Priority order for language keys: manual English, auto English, then any available
     candidate_langs = []
     for k in subtitles_dict.keys():
         if k.startswith("en") and k != "live_chat":
@@ -64,7 +59,6 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[flo
             candidate_langs.append(("fallback", k, v))
 
     for kind, lang_key, formats in candidate_langs:
-        # Prefer json3 format for precision, then vtt
         json3_fmt = next((f for f in formats if f.get("ext") == "json3"), None)
         vtt_fmt = next((f for f in formats if f.get("ext") == "vtt"), None)
         chosen_fmt = json3_fmt or vtt_fmt or (formats[0] if formats else None)
@@ -80,15 +74,13 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any]) -> List[Tuple[flo
                     data = resp.json()
                     cues = parse_json3_timedtext(data)
                     if cues:
-                        print(f"[Subtitles] Successfully fetched {len(cues)} cues from YouTube ({kind} - {lang_key})")
                         return cues
                 else:
                     cues = parse_vtt_text(resp.text)
                     if cues:
-                        print(f"[Subtitles] Successfully parsed {len(cues)} VTT cues from YouTube ({kind} - {lang_key})")
                         return cues
-        except Exception as e:
-            print(f"[Warning] Failed to fetch subtitles for {lang_key}: {e}")
+        except Exception:
+            pass
 
     return []
 
@@ -103,7 +95,6 @@ def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]
         t_dur = ev.get("dDurationMs", 0) / 1000.0
         segs = ev.get("segs", [])
         
-        # Combine word segments
         raw_text = "".join([s.get("utf8", "") for s in segs if s.get("utf8")])
         clean_text = raw_text.replace("\n", " ").strip()
         clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
@@ -113,7 +104,6 @@ def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]
             end_sec = max(t_start + 1.0, t_start + t_dur)
             cues.append((t_start, end_sec, clean_text))
 
-    # Deduplicate consecutive identical lines
     deduped: List[Tuple[float, float, str]] = []
     for c in cues:
         if deduped and deduped[-1][2].lower() == c[2].lower():
@@ -162,9 +152,7 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
 
 
 def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_audio.mp3") -> Dict[str, Any]:
-    """
-    Download audio as MP3 and probe video subtitle metadata without triggering yt-dlp 429 errors.
-    """
+    """Download audio as MP3 and probe video subtitle metadata."""
     emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}'...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
@@ -195,7 +183,7 @@ def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_aud
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
-        "writesubtitles": False,       # Handled directly via HTTP GET to avoid 429
+        "writesubtitles": False,
         "writeautomaticsub": False,
         "extractor_args": {
             "youtube": {
@@ -221,7 +209,6 @@ def download_youtube_audio(query_or_url: str, output_audio_path: str = "temp_aud
     if not os.path.exists(expected_audio) and os.path.exists(output_audio_path):
         expected_audio = output_audio_path
 
-    # Fetch subtitles directly via HTTP
     cues = fetch_direct_youtube_subtitles(video_info)
 
     emit_progress("ytdlp_done", 55, f"Audio & captions ready: '{title}' ({len(cues)} lines)", {
@@ -262,27 +249,58 @@ def build_ass_and_lrc_content(
     cues: List[Tuple[float, float, str]],
     output_ass_path: str = "lyrics.ass",
     offset_seconds: float = 0.0,
-    audio_duration: float = 180.0
+    audio_duration: float = 180.0,
+    aspect_ratio: str = "portrait",
+    font_name: str = "Impact",
+    font_size: Optional[int] = None
 ) -> Tuple[str, List[Dict[str, Any]], str]:
-    """Convert cues into 1080p ASS subtitle format and structured JSON timestamps."""
-    emit_progress("ass_start", 60, "Step 2: Formatting captions into 1080p ASS subtitle canvas...")
+    """
+    Convert cues into ASS subtitle format configured for Portrait (9:16) or Landscape (16:9)
+    with custom selectable typography.
+    """
+    is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
+    emit_progress("ass_start", 60, f"Step 2: Styling {'Portrait (9:16)' if is_portrait else 'Landscape (16:9)'} canvas with font '{font_name}'...")
 
     if not cues:
         cues = [
             (2.0, max(6.0, audio_duration - 2.0), "[Music Playing - Native YouTube Audio]")
         ]
 
-    ass_header = """[Script Info]
+    # Configure canvas & typography parameters based on aspect ratio
+    if is_portrait:
+        res_x = 1080
+        res_y = 1920
+        default_font_size = 58
+        margin_l = 70
+        margin_r = 70
+        margin_v = 450  # Bottom-centered with ample vertical clearance
+        alignment = 2   # Bottom-center alignment
+        outline_width = 4
+        shadow_depth = 3
+    else:
+        res_x = 1920
+        res_y = 1080
+        default_font_size = 48
+        margin_l = 60
+        margin_r = 60
+        margin_v = 80
+        alignment = 2
+        outline_width = 3
+        shadow_depth = 2
+
+    actual_font_size = font_size if font_size and font_size > 0 else default_font_size
+
+    ass_header = f"""[Script Info]
 ; Script generated by YouTube Lyric-Video Overlay Generator
 ScriptType: v4.00+
-PlayResX: 1920
-PlayResY: 1080
+PlayResX: {res_x}
+PlayResY: {res_y}
 WrapStyle: 0
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,30,30,60,1
+Style: Default,{font_name},{actual_font_size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -312,7 +330,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_header + "\n".join(dialogues) + "\n")
 
     raw_lrc = "\n".join(raw_lrc_lines)
-    emit_progress("ass_done", 70, f"Step 2: Generated styled 1080p ASS with {len(dialogues)} subtitle events.")
+    emit_progress("ass_done", 70, f"Step 2: Styled {len(dialogues)} events in {font_name} ({res_x}x{res_y}).")
     return output_ass_path, structured_lines, raw_lrc
 
 
@@ -335,13 +353,17 @@ def render_lyric_video_ffmpeg(
     audio_path: str,
     ass_path: str,
     output_path: str = "output_lyric_video.mp4",
-    duration: Optional[float] = None
+    duration: Optional[float] = None,
+    aspect_ratio: str = "portrait"
 ) -> str:
-    """Step 3: Run FFmpeg to render ASS subtitles over 1080p 30fps MP4 video with H.264 video and AAC audio."""
+    """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video."""
     if not duration or duration <= 0:
         duration = get_audio_duration(audio_path)
 
-    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering 1080p 30fps MP4 video ({duration:.1f}s)...")
+    is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
+    res_str = "1080x1920" if is_portrait else "1920x1080"
+
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video ({duration:.1f}s)...")
     
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
@@ -349,7 +371,7 @@ def render_lyric_video_ffmpeg(
 
     ffmpeg_cmd = [
         "ffmpeg", "-y",
-        "-f", "lavfi", "-i", f"color=c=black:s=1920x1080:r=30:d={duration:.2f}",
+        "-f", "lavfi", "-i", f"color=c=black:s={res_str}:r=30:d={duration:.2f}",
         "-i", audio_path,
         "-vf", f"ass={normalized_ass}",
         "-c:v", "libx264",
@@ -363,7 +385,7 @@ def render_lyric_video_ffmpeg(
         output_path
     ]
 
-    emit_progress("ffmpeg_rendering", 85, "Step 3: Encoding 1080p H.264 video with AAC audio...")
+    emit_progress("ffmpeg_rendering", 85, f"Step 3: Encoding {res_str} H.264 video with AAC audio...")
     subprocess.run(ffmpeg_cmd, check=True)
     emit_progress("ffmpeg_done", 95, f"Step 3: Video successfully rendered to '{output_path}'.")
     return output_path
@@ -374,10 +396,13 @@ def generate_lyric_video(
     output_path: str = "output_lyric_video.mp4",
     temp_audio_path: str = "temp_audio.mp3",
     temp_ass_path: str = "lyrics.ass",
-    offset_seconds: float = 0.0
+    offset_seconds: float = 0.0,
+    aspect_ratio: str = "portrait",
+    font_name: str = "Impact",
+    font_size: Optional[int] = None
 ) -> Dict[str, Any]:
-    """Main generator pipeline."""
-    emit_progress("init", 5, f"Initiating YouTube Audio & Subtitle Generator for '{song_query}'...")
+    """Main generator pipeline supporting Portrait and Font Customization."""
+    emit_progress("init", 5, f"Initiating YouTube Lyric Video Generator ({aspect_ratio}, Font: {font_name})...")
 
     yt_data = download_youtube_audio(query_or_url=song_query, output_audio_path=temp_audio_path)
     audio_path = yt_data["audio_path"]
@@ -387,10 +412,19 @@ def generate_lyric_video(
         cues=yt_data["cues"],
         output_ass_path=temp_ass_path,
         offset_seconds=offset_seconds,
-        audio_duration=duration
+        audio_duration=duration,
+        aspect_ratio=aspect_ratio,
+        font_name=font_name,
+        font_size=font_size
     )
 
-    render_lyric_video_ffmpeg(audio_path, ass_path, output_path, duration)
+    render_lyric_video_ffmpeg(
+        audio_path=audio_path,
+        ass_path=ass_path,
+        output_path=output_path,
+        duration=duration,
+        aspect_ratio=aspect_ratio
+    )
 
     final_result = {
         "status": "success",
@@ -401,6 +435,8 @@ def generate_lyric_video(
         "track_name": yt_data.get("title"),
         "artist_name": yt_data.get("uploader"),
         "duration": duration,
+        "aspect_ratio": aspect_ratio,
+        "font_name": font_name,
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
         "rawLrc": raw_lrc
@@ -416,13 +452,33 @@ if __name__ == "__main__":
     out = args[1] if len(args) > 1 else "output_lyric_video.mp4"
     
     offset = 0.0
+    aspect = "portrait"
+    font = "Impact"
+    size = None
+
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
             try:
                 offset = float(a.split("=")[1])
             except ValueError:
                 pass
+        elif a.startswith("--aspect="):
+            aspect = a.split("=")[1].strip()
+        elif a.startswith("--font="):
+            font = a.split("=")[1].strip()
+        elif a.startswith("--fontsize="):
+            try:
+                size = int(a.split("=")[1])
+            except ValueError:
+                pass
 
-    res = generate_lyric_video(query, out, offset_seconds=offset)
+    res = generate_lyric_video(
+        song_query=query,
+        output_path=out,
+        offset_seconds=offset,
+        aspect_ratio=aspect,
+        font_name=font,
+        font_size=size
+    )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

@@ -95,7 +95,7 @@
         </div>
       </form>
 
-      <!-- Popular Presets & Offset Selector -->
+      <!-- Popular Presets -->
       <div class="preset-row">
         <span class="preset-label">Try popular:</span>
         <button type="button" class="preset-chip" data-query="Rick Astley - Never Gonna Give You Up">Rick Astley - Never Gonna Give You Up</button>
@@ -104,13 +104,49 @@
         <button type="button" class="preset-chip" data-query="Ed Sheeran - Shape of You">Ed Sheeran - Shape of You</button>
       </div>
 
-      <div class="offset-quick-bar">
-        <span class="preset-label">Fine Timing Adjust:</span>
-        <button type="button" class="offset-chip active" data-offset="0.0">⚡ Exact YouTube Sync (0.0s)</button>
-        <button type="button" class="offset-chip" data-offset="-1.0">-1.0s</button>
-        <button type="button" class="offset-chip" data-offset="-0.5">-0.5s</button>
-        <button type="button" class="offset-chip" data-offset="+0.5">+0.5s</button>
-        <button type="button" class="offset-chip" data-offset="+1.0">+1.0s</button>
+      <!-- Studio Customization Controls Panel -->
+      <div class="studio-controls-panel">
+        <!-- Aspect Ratio Selection -->
+        <div class="control-group">
+          <span class="control-label">📐 Video Orientation:</span>
+          <div class="pill-group" id="aspect-ratio-group">
+            <button type="button" class="pill-btn active" data-aspect="portrait">
+              <span>📱 9:16 Portrait (Shorts / Reels / TikTok)</span>
+            </button>
+            <button type="button" class="pill-btn" data-aspect="landscape">
+              <span>🖥️ 16:9 Landscape (YouTube)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Typography / Font Selection -->
+        <div class="control-group">
+          <span class="control-label">🔤 Subtitle Typography / Font:</span>
+          <div class="pill-group font-pill-group" id="font-group">
+            <button type="button" class="pill-btn font-pill active" data-font="Impact" style="font-family: Impact, sans-serif;">Impact</button>
+            <button type="button" class="pill-btn font-pill" data-font="Montserrat" style="font-family: Montserrat, sans-serif;">Montserrat</button>
+            <button type="button" class="pill-btn font-pill" data-font="Arial" style="font-family: Arial, sans-serif;">Arial</button>
+            <button type="button" class="pill-btn font-pill" data-font="Segoe UI" style="font-family: 'Segoe UI', sans-serif;">Segoe UI</button>
+            <button type="button" class="pill-btn font-pill" data-font="Trebuchet MS" style="font-family: 'Trebuchet MS', sans-serif;">Trebuchet</button>
+            <button type="button" class="pill-btn font-pill" data-font="Georgia" style="font-family: Georgia, serif;">Georgia</button>
+            <button type="button" class="pill-btn font-pill" data-font="Courier New" style="font-family: 'Courier New', monospace;">Courier</button>
+          </div>
+          <div class="custom-font-wrapper">
+            <input type="text" id="custom-font-input" class="custom-font-input" placeholder="Or enter custom system font (e.g. Bebas Neue, Roboto)..." />
+          </div>
+        </div>
+
+        <!-- Fine Timing Offset -->
+        <div class="control-group">
+          <span class="control-label">⏱️ Timing Adjustment:</span>
+          <div class="pill-group" id="offset-group">
+            <button type="button" class="offset-chip active" data-offset="0.0">⚡ Exact YouTube Sync (0.0s)</button>
+            <button type="button" class="offset-chip" data-offset="-1.0">-1.0s</button>
+            <button type="button" class="offset-chip" data-offset="-0.5">-0.5s</button>
+            <button type="button" class="offset-chip" data-offset="+0.5">+0.5s</button>
+            <button type="button" class="offset-chip" data-offset="+1.0">+1.0s</button>
+          </div>
+        </div>
       </div>
     </section>
 

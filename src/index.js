@@ -106,11 +106,13 @@ app.get('/api/generate-video-stream', (req, res) => {
   const tempAudioPath = path.join(VIDEOS_DIR, `${safeName}_temp.mp3`);
   const tempAssPath = path.join(VIDEOS_DIR, `${safeName}_temp.ass`);
 
+  const offset = req.query.offset || '0.0';
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonProcess = spawn('python', [
     pythonScript,
     query,
     videoOutputPath,
+    `--offset=${offset}`,
     '--json-progress'
   ], {
     cwd: path.join(__dirname, '..')

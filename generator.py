@@ -1,7 +1,7 @@
 """
 Parallel Lyric-Video Overlay Generator in Python
 Produces a 1080p 30fps transparent lyric video overlay synced with audio from YouTube & LRCLIB.
-Supports live JSON progress streaming for web frontend integration.
+Includes intelligent Studio Audio duration-matching to eliminate music video intros/outros.
 """
 
 import os
@@ -39,9 +39,108 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
         print(f"[{percent}% - {step}] {message}", flush=True)
 
 
-def fetch_audio_task(song_query: str, output_audio_path: str = "temp_audio.mp3") -> Dict[str, Any]:
-    """Task A: Use yt-dlp to search YouTube & extract best audio track as MP3."""
-    emit_progress("audio_start", 10, f"Task A: Searching YouTube for '{song_query}' via yt-dlp...")
+def fetch_lyrics_task(song_query: str) -> Dict[str, Any]:
+    """Task B: Query LRCLIB search API with User-Agent & extract syncedLyrics."""
+    emit_progress("lyrics_start", 10, f"Task B: Querying LRCLIB API for '{song_query}'...")
+    headers = {"User-Agent": USER_AGENT}
+    response = requests.get(LRCLIB_SEARCH_API, params={"q": song_query}, headers=headers, timeout=15)
+    response.raise_for_status()
+    results = response.json()
+
+    if not results or not isinstance(results, list):
+        raise ValueError(f"No lyrics found for query: '{song_query}'")
+
+    # Filter/rank track with syncedLyrics
+    best_track = next((item for item in results if item.get("syncedLyrics") and item["syncedLyrics"].strip()), results[0])
+    if not best_track.get("syncedLyrics"):
+        raise ValueError(f"No synced LRC lyrics found for '{song_query}' (only plain text available).")
+
+    duration = float(best_track.get("duration") or 0.0)
+    emit_progress("lyrics_done", 40, f"Task B: Synced lyrics retrieved for '{best_track.get('trackName')}' ({duration:.0f}s)", {
+        "track_name": best_track.get("trackName"),
+        "artist_name": best_track.get("artistName"),
+        "album_name": best_track.get("albumName"),
+        "duration": duration
+    })
+
+    return {
+        "track_name": best_track.get("trackName"),
+        "artist_name": best_track.get("artistName"),
+        "album_name": best_track.get("albumName"),
+        "duration": duration,
+        "synced_lyrics": best_track.get("syncedLyrics"),
+        "plain_lyrics": best_track.get("plainLyrics"),
+    }
+
+
+def find_best_studio_audio_candidate(ydl: yt_dlp.YoutubeDL, song_query: str, target_duration: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Search YouTube specifically for Studio Audio / Topic tracks to avoid music videos with long cinematic intros.
+    Ranks candidate entries by duration closeness to LRCLIB and title keywords.
+    """
+    search_queries = [
+        f"ytsearch5:{song_query} (Official Audio)",
+        f"ytsearch5:{song_query} Audio",
+        f"ytsearch5:{song_query} - Topic",
+        f"ytsearch5:{song_query}"
+    ]
+
+    candidates = []
+    for sq in search_queries:
+        try:
+            res = ydl.extract_info(sq, download=False)
+            if res and "entries" in res:
+                candidates.extend(res["entries"])
+        except Exception:
+            pass
+
+    # Deduplicate candidates by id
+    seen = set()
+    unique_candidates = []
+    for c in candidates:
+        if c and c.get("id") and c["id"] not in seen:
+            seen.add(c["id"])
+            unique_candidates.append(c)
+
+    if not unique_candidates:
+        # Fallback to direct search
+        info = ydl.extract_info(f"ytsearch1:{song_query}", download=False)
+        return info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
+
+    # Score and rank candidates
+    scored = []
+    for c in unique_candidates:
+        dur = float(c.get("duration") or 0.0)
+        dur_diff = abs(dur - target_duration) if (target_duration and target_duration > 0 and dur > 0) else 999.0
+        title = (c.get("title") or "").lower()
+
+        score = dur_diff
+        # Boost studio audio & topic releases
+        if "official audio" in title or "- topic" in title:
+            score -= 8.0
+        elif "audio" in title:
+            score -= 4.0
+
+        # Penalize official music videos that often contain cinematic acting intros
+        if "official music video" in title or "music video" in title or "movie" in title or "short film" in title:
+            score += 25.0
+        if "live" in title or "concert" in title or "reaction" in title or "remix" in title:
+            score += 35.0
+
+        scored.append((score, c))
+
+    scored.sort(key=lambda x: x[0])
+    best_candidate = scored[0][1]
+    print(f"[Audio Engine] Selected studio track: '{best_candidate.get('title')}' (Duration: {best_candidate.get('duration')}s)")
+    return best_candidate
+
+
+def fetch_audio_task(song_query: str, output_audio_path: str = "temp_audio.mp3", target_duration: Optional[float] = None) -> Dict[str, Any]:
+    """
+    Task A: Search YouTube for studio master audio matching the LRCLIB track duration,
+    extract audio and convert to MP3.
+    """
+    emit_progress("audio_start", 15, f"Task A: Searching YouTube for Studio Audio matching '{song_query}'...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
     if os.path.exists(output_audio_path):
@@ -60,7 +159,6 @@ def fetch_audio_task(song_query: str, output_audio_path: str = "temp_audio.mp3")
                 "preferredquality": "192",
             }
         ],
-        "default_search": "ytsearch3",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
@@ -78,72 +176,24 @@ def fetch_audio_task(song_query: str, output_audio_path: str = "temp_audio.mp3")
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        search_query = f"ytsearch3:{song_query}"
-        info = ydl.extract_info(search_query, download=False)
-        entries = info.get("entries", [info]) if info else []
-        if not entries:
-            raise ValueError(f"No YouTube audio tracks found for '{song_query}'")
+        best_candidate = find_best_studio_audio_candidate(ydl, song_query, target_duration)
+        video_url = best_candidate.get("webpage_url") or f"https://www.youtube.com/watch?v={best_candidate.get('id')}"
+        emit_progress("audio_downloading", 30, f"Task A: Downloading Studio Audio: '{best_candidate.get('title')}'...")
+        ydl.download([video_url])
 
-        download_success = False
-        video_info = None
-        for entry in entries:
-            try:
-                ydl.download([entry["webpage_url"]])
-                video_info = entry
-                download_success = True
-                break
-            except Exception as dl_err:
-                print(f"[Warning] Candidate download failed: {dl_err}. Trying next candidate...")
-
-        if not download_success or not video_info:
-            raise ValueError(f"Failed to download audio track for '{song_query}'")
-
-    duration = video_info.get("duration")
-    title = video_info.get("title", song_query)
+    duration = best_candidate.get("duration")
+    title = best_candidate.get("title", song_query)
     expected_file = f"{audio_basename}.mp3"
     if not os.path.exists(expected_file) and os.path.exists(output_audio_path):
         expected_file = output_audio_path
 
-    emit_progress("audio_done", 45, f"Task A: Audio extracted ({duration or 0}s): '{title}'", {
+    emit_progress("audio_done", 50, f"Task A: Studio Audio extracted ({duration or 0}s): '{title}'", {
         "title": title,
         "duration": duration,
         "audio_path": expected_file
     })
 
     return {"title": title, "duration": duration, "audio_path": expected_file}
-
-
-def fetch_lyrics_task(song_query: str) -> Dict[str, Any]:
-    """Task B: Query LRCLIB search API with User-Agent & extract syncedLyrics."""
-    emit_progress("lyrics_start", 15, f"Task B: Querying LRCLIB API for '{song_query}'...")
-    headers = {"User-Agent": USER_AGENT}
-    response = requests.get(LRCLIB_SEARCH_API, params={"q": song_query}, headers=headers, timeout=15)
-    response.raise_for_status()
-    results = response.json()
-
-    if not results or not isinstance(results, list):
-        raise ValueError(f"No lyrics found for query: '{song_query}'")
-
-    # Filter/rank track with syncedLyrics
-    best_track = next((item for item in results if item.get("syncedLyrics") and item["syncedLyrics"].strip()), results[0])
-    if not best_track.get("syncedLyrics"):
-        raise ValueError(f"No synced LRC lyrics found for '{song_query}' (only plain text available).")
-
-    emit_progress("lyrics_done", 50, f"Task B: Synced lyrics retrieved for '{best_track.get('trackName')}'", {
-        "track_name": best_track.get("trackName"),
-        "artist_name": best_track.get("artistName"),
-        "album_name": best_track.get("albumName"),
-        "duration": best_track.get("duration")
-    })
-
-    return {
-        "track_name": best_track.get("trackName"),
-        "artist_name": best_track.get("artistName"),
-        "album_name": best_track.get("albumName"),
-        "duration": best_track.get("duration"),
-        "synced_lyrics": best_track.get("syncedLyrics"),
-        "plain_lyrics": best_track.get("plainLyrics"),
-    }
 
 
 def parse_lrc_timestamp_to_seconds(ts_str: str) -> float:
@@ -164,17 +214,23 @@ def seconds_to_ass_timestamp(total_seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def lrc_to_ass(lrc_content: str, output_ass_path: str = "lyrics.ass", fallback_line_duration: float = 4.0) -> Tuple[str, List[Dict[str, Any]]]:
-    """Step 2: Convert LRC timestamped string into a styled 1080p .ass subtitle file."""
-    emit_progress("ass_start", 55, "Step 2: Converting LRC timestamps to 1080p ASS subtitle format...")
+def lrc_to_ass(
+    lrc_content: str,
+    output_ass_path: str = "lyrics.ass",
+    offset_seconds: float = 0.0,
+    fallback_line_duration: float = 4.0
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """Step 2: Convert LRC timestamped string into a styled 1080p .ass subtitle file with optional offset adjustment."""
+    emit_progress("ass_start", 55, f"Step 2: Converting LRC timestamps to 1080p ASS (Offset: {offset_seconds:+.2f}s)...")
     
     lrc_regex = re.compile(r"\[(\d{2}:\d{2}(?:\.\d{2,3})?)\](.*)")
     entries = []
     for line in lrc_content.splitlines():
         match = lrc_regex.match(line.strip())
         if match and match.group(2).strip():
-            sec = parse_lrc_timestamp_to_seconds(match.group(1))
-            entries.append((sec, match.group(1), match.group(2).strip()))
+            raw_sec = parse_lrc_timestamp_to_seconds(match.group(1))
+            adjusted_sec = max(0.0, raw_sec + offset_seconds)
+            entries.append((adjusted_sec, match.group(1), match.group(2).strip()))
 
     entries.sort(key=lambda x: x[0])
 
@@ -245,7 +301,6 @@ def render_lyric_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 70, f"Step 3: Rendering 1080p 30fps transparent video overlay ({duration:.1f}s)...")
     
-    # Format ass path properly for FFmpeg filter
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
         normalized_ass = normalized_ass.replace(":", "\\:")
@@ -276,18 +331,34 @@ async def generate_lyric_video_async(
     song_query: str,
     output_path: str = "output_lyric_video.webm",
     temp_audio_path: str = "temp_audio.mp3",
-    temp_ass_path: str = "lyrics.ass"
+    temp_ass_path: str = "lyrics.ass",
+    offset_seconds: float = 0.0
 ) -> Dict[str, Any]:
     """Parallel Execution Pipeline using native asyncio and ThreadPoolExecutor."""
     emit_progress("init", 5, f"Initiating concurrent engines for '{song_query}'...")
 
     loop = asyncio.get_running_loop()
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        task_a = loop.run_in_executor(executor, fetch_audio_task, song_query, temp_audio_path)
-        task_b = loop.run_in_executor(executor, fetch_lyrics_task, song_query)
-        audio_res, lyrics_res = await asyncio.gather(task_a, task_b)
+    
+    # Query LRCLIB first or in parallel to get target studio duration
+    lyrics_future = loop.run_in_executor(None, fetch_lyrics_task, song_query)
+    
+    # Run audio extraction with studio candidate ranking
+    # If lyrics finishes immediately, pass target duration to audio fetcher
+    try:
+        lyrics_res = await asyncio.wait_for(asyncio.shield(lyrics_future), timeout=1.5)
+        target_dur = lyrics_res.get("duration")
+    except Exception:
+        target_dur = None
 
-    ass_path, structured_lines = lrc_to_ass(lyrics_res["synced_lyrics"], temp_ass_path)
+    audio_future = loop.run_in_executor(None, fetch_audio_task, song_query, temp_audio_path, target_dur)
+    
+    # Wait for both tasks
+    if target_dur is not None:
+        audio_res = await audio_future
+    else:
+        audio_res, lyrics_res = await asyncio.gather(audio_future, lyrics_future)
+
+    ass_path, structured_lines = lrc_to_ass(lyrics_res["synced_lyrics"], temp_ass_path, offset_seconds)
     duration = audio_res.get("duration") or get_audio_duration(audio_res["audio_path"])
     
     render_lyric_video_ffmpeg(audio_res["audio_path"], ass_path, output_path, duration)
@@ -315,7 +386,8 @@ def generate_lyric_video(
     song_query: str,
     output_path: str = "output_lyric_video.webm",
     temp_audio_path: str = "temp_audio.mp3",
-    temp_ass_path: str = "lyrics.ass"
+    temp_ass_path: str = "lyrics.ass",
+    offset_seconds: float = 0.0
 ) -> Dict[str, Any]:
     """Synchronous entrypoint for generate_lyric_video."""
     return asyncio.run(
@@ -323,7 +395,8 @@ def generate_lyric_video(
             song_query=song_query,
             output_path=output_path,
             temp_audio_path=temp_audio_path,
-            temp_ass_path=temp_ass_path
+            temp_ass_path=temp_ass_path,
+            offset_seconds=offset_seconds
         )
     )
 
@@ -332,6 +405,15 @@ if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     query = args[0] if len(args) > 0 else "Rick Astley - Never Gonna Give You Up"
     out = args[1] if len(args) > 1 else "output_lyric_video.webm"
-    res = generate_lyric_video(query, out)
+    
+    offset = 0.0
+    for a in sys.argv[1:]:
+        if a.startswith("--offset="):
+            try:
+                offset = float(a.split("=")[1])
+            except ValueError:
+                pass
+
+    res = generate_lyric_video(query, out, offset_seconds=offset)
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

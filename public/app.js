@@ -7,6 +7,7 @@ const state = {
   syncedLines: [],
   currentLineIndex: -1,
   currentBackdrop: 'checkerboard',
+  generationOffset: 0.0,
 };
 
 // DOM Elements
@@ -15,6 +16,7 @@ const songQueryInput = document.getElementById('song-query-input');
 const generateBtn = document.getElementById('generate-btn');
 const btnText = document.getElementById('btn-text');
 const presetChips = document.querySelectorAll('.preset-chip');
+const offsetChips = document.querySelectorAll('.offset-chip');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -90,6 +92,16 @@ function setupEventListeners() {
     });
   });
 
+  // Offset chips
+  offsetChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      offsetChips.forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      state.generationOffset = parseFloat(chip.dataset.offset) || 0.0;
+      showToast(`Timing offset set to ${chip.dataset.offset}s`);
+    });
+  });
+
   // Backdrop Switcher
   backdropBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -122,8 +134,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}`;
+  // Connect to SSE Endpoint with timing offset parameter
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&offset=${state.generationOffset}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 

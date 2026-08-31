@@ -172,12 +172,45 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
     return deduped
 
 
+# Cache detected encoder
+_CACHED_ENCODER = None
+
+def detect_fastest_h264_encoder() -> Tuple[str, List[str]]:
+    """Automatically detect if GPU hardware acceleration (NVENC, AMF, MF) is available."""
+    global _CACHED_ENCODER
+    if _CACHED_ENCODER is not None:
+        return _CACHED_ENCODER
+
+    test_candidates = [
+        ("h264_nvenc", ["-preset", "p1", "-cq", "19"]),
+        ("h264_amf", ["-quality", "speed", "-rc", "cqp", "-qp_i", "19", "-qp_p", "19"]),
+        ("h264_mf", ["-rate_control", "cbr", "-b:v", "3M"]),
+        ("libx264", ["-preset", "ultrafast", "-tune", "fastdecode", "-crf", "18"]),
+    ]
+
+    for enc_name, extra_flags in test_candidates:
+        cmd = [
+            "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=black:s=640x360:r=30:d=0.1",
+            "-c:v", enc_name
+        ] + extra_flags + ["-f", "null", "-"]
+        try:
+            res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode == 0:
+                _CACHED_ENCODER = (enc_name, extra_flags)
+                return _CACHED_ENCODER
+        except Exception:
+            pass
+
+    _CACHED_ENCODER = ("libx264", ["-preset", "ultrafast", "-tune", "fastdecode", "-crf", "18"])
+    return _CACHED_ENCODER
+
+
 def download_youtube_audio(
     query_or_url: str,
     output_audio_path: str = "temp_audio.mp3",
     target_lang: str = "auto"
 ) -> Dict[str, Any]:
-    """Download audio as MP3 and probe video subtitle metadata in requested language."""
+    """Download audio as MP3 and probe video subtitle metadata in requested language with parallel streams."""
     emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}' (Language: {target_lang})...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
@@ -196,7 +229,7 @@ def download_youtube_audio(
     search_target = query_or_url if is_direct_url else f"ytsearch1:{query_or_url}"
 
     ydl_opts = {
-        "format": "bestaudio/best",
+        "format": "ba[ext=m4a]/ba[ext=mp3]/140/bestaudio/best",
         "outtmpl": f"{audio_basename}.%(ext)s",
         "postprocessors": [
             {
@@ -210,6 +243,8 @@ def download_youtube_audio(
         "no_warnings": True,
         "writesubtitles": False,
         "writeautomaticsub": False,
+        "concurrent_fragment_downloads": 8,
+        "buffersize": 1024 * 64,
         "extractor_args": {
             "youtube": {
                 "player_client": ["mweb", "android", "web", "ios"]
@@ -383,14 +418,15 @@ def render_lyric_video_ffmpeg(
     duration: Optional[float] = None,
     aspect_ratio: str = "portrait"
 ) -> str:
-    """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video."""
+    """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video with GPU Acceleration."""
     if not duration or duration <= 0:
         duration = get_audio_duration(audio_path)
 
     is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
     res_str = "1080x1920" if is_portrait else "1920x1080"
 
-    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video ({duration:.1f}s)...")
+    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video using {encoder_name} ({duration:.1f}s)...")
     
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
@@ -398,12 +434,12 @@ def render_lyric_video_ffmpeg(
 
     ffmpeg_cmd = [
         "ffmpeg", "-y",
+        "-threads", "0",
         "-f", "lavfi", "-i", f"color=c=black:s={res_str}:r=30:d={duration:.2f}",
         "-i", audio_path,
         "-vf", f"ass={normalized_ass}",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "18",
+        "-c:v", encoder_name,
+    ] + encoder_flags + [
         "-pix_fmt", "yuv420p",
         "-c:a", "aac",
         "-b:a", "192k",
@@ -412,7 +448,7 @@ def render_lyric_video_ffmpeg(
         output_path
     ]
 
-    emit_progress("ffmpeg_rendering", 85, f"Step 3: Encoding {res_str} H.264 video with AAC audio...")
+    emit_progress("ffmpeg_rendering", 85, f"Step 3: Hardware encoding {res_str} video with {encoder_name}...")
     subprocess.run(ffmpeg_cmd, check=True)
     emit_progress("ffmpeg_done", 95, f"Step 3: Video successfully rendered to '{output_path}'.")
     return output_path

@@ -8,6 +8,8 @@ const state = {
   currentLineIndex: -1,
   currentBackdrop: 'black',
   template: 'template1',
+  fontFamily: 'Impact',
+  language: 'auto',
 };
 
 // DOM Elements
@@ -16,6 +18,10 @@ const songQueryInput = document.getElementById('song-query-input');
 const generateBtn = document.getElementById('generate-btn');
 const btnText = document.getElementById('btn-text');
 const templatePills = document.querySelectorAll('#template-group .template-pill');
+const fontBtns = document.querySelectorAll('#font-group .font-pill');
+const customFontInput = document.getElementById('custom-font-input');
+const langBtns = document.querySelectorAll('#lang-group .lang-pill');
+const customLangInput = document.getElementById('custom-lang-input');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -94,6 +100,50 @@ function setupEventListeners() {
     });
   });
 
+  // Font Selection
+  fontBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      fontBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.fontFamily = btn.dataset.font;
+      if (customFontInput) customFontInput.value = '';
+      showToast(`Font set to ${btn.dataset.font}`);
+    });
+  });
+
+  // Custom Font Input
+  if (customFontInput) {
+    customFontInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim();
+      if (val) {
+        fontBtns.forEach(b => b.classList.remove('active'));
+        state.fontFamily = val;
+      }
+    });
+  }
+
+  // Language Selection
+  langBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      langBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.language = btn.dataset.lang;
+      if (customLangInput) customLangInput.value = '';
+      showToast(`Language set to ${btn.textContent.trim()}`);
+    });
+  });
+
+  // Custom Language Input
+  if (customLangInput) {
+    customLangInput.addEventListener('input', (e) => {
+      const val = e.target.value.trim().toLowerCase();
+      if (val) {
+        langBtns.forEach(b => b.classList.remove('active'));
+        state.language = val;
+      }
+    });
+  }
+
   // Backdrop Switcher
   backdropBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -126,8 +176,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template parameter
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}`;
+  // Connect to SSE Endpoint with template, font, and language parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 

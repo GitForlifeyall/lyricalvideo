@@ -49,22 +49,65 @@
         </div>
       </form>
 
-      <!-- Templates Selector -->
-      <div class="template-selector-bar">
-        <span class="template-label">🎨 Templates:</span>
-        <div class="template-pills-group" id="template-group">
-          <button type="button" class="template-pill active" data-template="template1">
-            <span class="template-num">Temp 1</span>
-            <span class="template-desc">📱 9:16 Kinetic Impact (TikTok / Reels)</span>
-          </button>
-          <button type="button" class="template-pill" data-template="template2">
-            <span class="template-num">Temp 2</span>
-            <span class="template-desc">✨ 9:16 Modern Clean (Montserrat)</span>
-          </button>
-          <button type="button" class="template-pill" data-template="template3">
-            <span class="template-num">Temp 3</span>
-            <span class="template-desc">🖥️ 16:9 Cinematic (YouTube Landscape)</span>
-          </button>
+      <!-- Studio Controls (Templates, Font, Language) -->
+      <div class="studio-controls-panel">
+        <!-- Templates Selector -->
+        <div class="control-row">
+          <span class="control-label">🎨 Template:</span>
+          <div class="template-pills-group" id="template-group">
+            <button type="button" class="template-pill active" data-template="template1">
+              <span class="template-num">Temp 1</span>
+              <span class="template-desc">📱 9:16 Kinetic Impact (TikTok / Reels)</span>
+            </button>
+            <button type="button" class="template-pill" data-template="template2">
+              <span class="template-num">Temp 2</span>
+              <span class="template-desc">✨ 9:16 Modern Clean (Montserrat)</span>
+            </button>
+            <button type="button" class="template-pill" data-template="template3">
+              <span class="template-num">Temp 3</span>
+              <span class="template-desc">🖥️ 16:9 Cinematic (YouTube Landscape)</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Typography / Font Selection -->
+        <div class="control-row">
+          <span class="control-label">🔤 Font / Style:</span>
+          <div class="pill-group font-pill-group" id="font-group">
+            <button type="button" class="pill-btn font-pill active" data-font="Impact" style="font-family: Impact, sans-serif;">Impact</button>
+            <button type="button" class="pill-btn font-pill" data-font="Montserrat" style="font-family: Montserrat, sans-serif;">Montserrat</button>
+            <button type="button" class="pill-btn font-pill" data-font="Arial" style="font-family: Arial, sans-serif;">Arial</button>
+            <button type="button" class="pill-btn font-pill" data-font="Segoe UI" style="font-family: 'Segoe UI', sans-serif;">Segoe UI</button>
+            <button type="button" class="pill-btn font-pill" data-font="Trebuchet MS" style="font-family: 'Trebuchet MS', sans-serif;">Trebuchet</button>
+            <button type="button" class="pill-btn font-pill" data-font="Georgia" style="font-family: Georgia, serif;">Georgia</button>
+            <button type="button" class="pill-btn font-pill" data-font="Courier New" style="font-family: 'Courier New', monospace;">Courier</button>
+          </div>
+          <div class="custom-input-wrapper">
+            <input type="text" id="custom-font-input" class="custom-studio-input" placeholder="Custom font (e.g. Bebas Neue)..." />
+          </div>
+        </div>
+
+        <!-- Subtitle Language Selection -->
+        <div class="control-row">
+          <span class="control-label">🌐 Language:</span>
+          <div class="pill-group" id="lang-group">
+            <button type="button" class="pill-btn lang-pill active" data-lang="auto">🌐 Auto / Native</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="pa">🇮🇳 Punjabi</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="en">🇺🇸 English</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="hi">🇮🇳 Hindi</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="es">🇪🇸 Spanish</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="fr">🇫🇷 French</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="de">🇩🇪 German</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="ja">🇯🇵 Japanese</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="ko">🇰🇷 Korean</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="pt">🇧🇷 Portuguese</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="it">🇮🇹 Italian</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="zh">🇨🇳 Chinese</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="ru">🇷🇺 Russian</button>
+          </div>
+          <div class="custom-input-wrapper" style="max-width: 170px;">
+            <input type="text" id="custom-lang-input" class="custom-studio-input" placeholder="ISO (e.g. ar, tr)..." />
+          </div>
         </div>
       </div>
     </section>

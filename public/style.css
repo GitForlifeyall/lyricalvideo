@@ -371,27 +371,95 @@ body {
   letter-spacing: 0.05em;
 }
 
-/* Templates Selector Bar */
-.template-selector-bar {
+/* Studio Controls Panel */
+.studio-controls-panel {
   width: 100%;
   background: var(--bg-card);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-lg);
-  padding: 1rem 1.25rem;
+  padding: 1.15rem 1.35rem;
   backdrop-filter: blur(20px);
   box-shadow: var(--shadow-md);
   display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.85rem;
-  margin-top: 0.25rem;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.35rem;
 }
 
-.template-label {
-  font-size: 0.875rem;
+.control-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.control-label {
+  font-size: 0.825rem;
   font-weight: 700;
   color: var(--text-secondary);
+  min-width: 100px;
   white-space: nowrap;
+}
+
+.pill-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  flex: 1;
+}
+
+.pill-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.pill-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.pill-btn.active {
+  background: rgba(139, 92, 246, 0.24);
+  border-color: var(--border-focus);
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.35);
+}
+
+.custom-input-wrapper {
+  flex: 1;
+  min-width: 140px;
+}
+
+.custom-studio-input {
+  width: 100%;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.custom-studio-input:focus {
+  border-color: var(--border-focus);
+  background: rgba(0, 0, 0, 0.5);
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2);
 }
 
 .template-pills-group {
@@ -409,7 +477,7 @@ body {
   font-family: var(--font-sans);
   font-size: 0.825rem;
   font-weight: 600;
-  padding: 0.5rem 0.95rem;
+  padding: 0.45rem 0.85rem;
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);

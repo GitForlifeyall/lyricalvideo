@@ -67,10 +67,6 @@
               <span class="template-num">Temp 3</span>
               <span class="template-desc">🖥️ 16:9 Cinematic (YouTube Landscape)</span>
             </button>
-            <button type="button" class="template-pill brat-pill" data-template="brat">
-              <span class="template-num brat-badge">brat</span>
-              <span class="template-desc">🟩 9:16 brat (Charli XCX Lime Green)</span>
-            </button>
           </div>
         </div>
 
@@ -96,9 +92,9 @@
           <span class="control-label">🌐 Language:</span>
           <div class="pill-group" id="lang-group">
             <button type="button" class="pill-btn lang-pill active" data-lang="auto">🌐 Auto / Native</button>
-            <button type="button" class="pill-btn lang-pill" data-lang="pa">🇮🇳 Punjabi</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="pa">🇮🇳 Punjabi (Hinglish)</button>
             <button type="button" class="pill-btn lang-pill" data-lang="en">🇺🇸 English</button>
-            <button type="button" class="pill-btn lang-pill" data-lang="hi">🇮🇳 Hindi</button>
+            <button type="button" class="pill-btn lang-pill" data-lang="hi">🇮🇳 Hindi (Hinglish)</button>
             <button type="button" class="pill-btn lang-pill" data-lang="es">🇪🇸 Spanish</button>
             <button type="button" class="pill-btn lang-pill" data-lang="fr">🇫🇷 French</button>
             <button type="button" class="pill-btn lang-pill" data-lang="de">🇩🇪 German</button>
@@ -111,6 +107,20 @@
           </div>
           <div class="custom-input-wrapper" style="max-width: 170px;">
             <input type="text" id="custom-lang-input" class="custom-studio-input" placeholder="ISO (e.g. ar, tr)..." />
+          </div>
+        </div>
+
+        <!-- Dynamic Lyric Placement (Default: Center) -->
+        <div class="control-row">
+          <span class="control-label">📍 Placement:</span>
+          <div class="pill-group" id="placement-group">
+            <button type="button" class="pill-btn placement-pill" data-placement="top" data-ypos="20">⬆️ Top (20%)</button>
+            <button type="button" class="pill-btn placement-pill active" data-placement="center" data-ypos="50">🎯 Center (50% Default)</button>
+            <button type="button" class="pill-btn placement-pill" data-placement="bottom" data-ypos="80">⬇️ Bottom (80%)</button>
+          </div>
+          <div class="placement-slider-wrap">
+            <label for="ypos-slider" class="slider-label">Vertical Position: <span id="ypos-val" class="ypos-badge">50% (Center)</span></label>
+            <input type="range" id="ypos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
           </div>
         </div>
       </div>
@@ -208,54 +218,42 @@
           <button class="backdrop-btn" data-bg="green" title="Green Screen">🟩 Green</button>
           <button class="backdrop-btn" data-bg="black" title="OLED Black">⬛ Black</button>
         </div>
-      <!-- Interactive Subtitle Placement Customizer -->
-      <div class="placement-customizer-bar">
-        <div class="placement-header-row">
-          <div class="placement-title">
-            <span class="placement-icon">📐</span>
-            <strong>Interactive Subtitle Placement:</strong>
-            <span class="placement-hint">(Drag the box on the video or use slider below)</span>
-          </div>
-          <button type="button" id="apply-placement-btn" class="apply-placement-btn">
-            <span>⚡ Apply &amp; Re-render Video</span>
-          </button>
-        </div>
-
-        <div class="placement-controls-row">
-          <!-- Position Presets -->
-          <div class="placement-presets">
-            <button type="button" class="pos-preset-btn" data-pos="top">⬆️ Top</button>
-            <button type="button" class="pos-preset-btn" data-pos="middle">🎯 Center</button>
-            <button type="button" class="pos-preset-btn active" data-pos="bottom">⬇️ Bottom</button>
-          </div>
-
-          <!-- Vertical Slider -->
-          <div class="placement-slider-wrap">
-            <label for="vertical-pos-slider" class="slider-label">Vertical Position:</label>
-            <input type="range" id="vertical-pos-slider" min="5" max="95" value="80" class="placement-slider" />
-            <span id="slider-pos-val" class="slider-pos-val">80% (Bottom)</span>
-          </div>
-        </div>
       </div>
 
       <div class="stage-content-grid">
-        <!-- Left: Video Canvas Container with Draggable Guide -->
+        <!-- Left: Video Canvas Container -->
         <div class="video-preview-wrapper" id="video-preview-wrapper">
           <div class="video-backdrop backdrop-black" id="video-backdrop">
             <video id="output-video-player" class="output-video-player" controls autoplay playsinline loop>
               <source id="video-source" src="" type="video/mp4">
               Your browser does not support the video tag.
             </video>
-            <!-- Interactive Draggable Subtitle Guide -->
-            <div id="interactive-subtitle-guide" class="interactive-subtitle-guide" title="Drag to reposition subtitles">
-              <span class="guide-drag-icon">⋮⋮</span>
-              <span id="guide-sample-text" class="guide-sample-text">✨ [Drag to Reposition Subtitles]</span>
-            </div>
           </div>
         </div>
 
         <!-- Right: Teleprompter & Downloads Panel -->
         <aside class="stage-sidebar">
+          <!-- Interactive Subtitle Reposition & Re-render Box -->
+          <div class="reposition-card">
+            <h4 class="download-card-title">📍 Interactive Lyric Placement</h4>
+            <p class="reposition-desc">Adjust where the subtitles appear on the video before downloading:</p>
+            <div class="pill-group" id="stage-placement-group" style="margin-bottom: 0.75rem;">
+              <button type="button" class="pill-btn stage-place-btn" data-placement="top" data-ypos="20">⬆️ Top</button>
+              <button type="button" class="pill-btn stage-place-btn active" data-placement="center" data-ypos="50">🎯 Center (Default)</button>
+              <button type="button" class="pill-btn stage-place-btn" data-placement="bottom" data-ypos="80">⬇️ Bottom</button>
+            </div>
+            <div class="stage-slider-wrap">
+              <label for="stage-ypos-slider" class="slider-label">Vertical Position: <strong id="stage-ypos-val">50% (Center)</strong></label>
+              <input type="range" id="stage-ypos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
+            </div>
+            <button type="button" id="stage-rerender-btn" class="btn-rerender">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path>
+              </svg>
+              <span>⚡ Apply Placement &amp; Re-render</span>
+            </button>
+          </div>
+
           <!-- Download Buttons -->
           <div class="download-card">
             <h4 class="download-card-title">Download Assets</h4>

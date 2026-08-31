@@ -110,8 +110,8 @@ app.get('/api/generate-video-stream', (req, res) => {
   const template = req.query.template || 'template1';
   const font = req.query.font || '';
   const lang = req.query.lang || 'auto';
-  const marginV = req.query.margin_v || '';
-  const alignment = req.query.alignment || '';
+  const placement = req.query.placement || 'center';
+  const ypos = req.query.ypos || '50';
 
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonArgs = [
@@ -121,16 +121,12 @@ app.get('/api/generate-video-stream', (req, res) => {
     `--offset=${offset}`,
     `--template=${template}`,
     `--lang=${lang}`,
+    `--placement=${placement}`,
+    `--ypos=${ypos}`,
     '--json-progress'
   ];
   if (font) {
     pythonArgs.push(`--font=${font}`);
-  }
-  if (marginV) {
-    pythonArgs.push(`--margin-v=${marginV}`);
-  }
-  if (alignment) {
-    pythonArgs.push(`--alignment=${alignment}`);
   }
 
   const pythonProcess = spawn('python', pythonArgs, {

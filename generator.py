@@ -374,19 +374,25 @@ def download_youtube_audio(
 
     cues, matched_lang = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
-    def has_indic_script(cues_list):
-        for _, _, text in cues_list:
-            if any(('\u0900' <= ch <= '\u097F') or ('\u0A00' <= ch <= '\u0A7F') for ch in text):
-                return True
-        return False
+    # Check if lyrics contain non-Latin Indic/Gurmukhi/Devanagari script
+    has_indic_script = any(bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', c[2])) for c in cues) if cues else False
+    is_punjabi_or_hindi_requested = target_lang in ["pa", "punjabi", "panjabi", "hi", "hindi"]
 
-    # Genius API Fallback for songs without subtitles or to ensure Romanized Punjabi/Hinglish script
-    if not cues or (target_lang in ["pa", "punjabi", "hinglish"] and has_indic_script(cues)):
+    # Enforce Romanized Hinglish/Punjabi lyrics via Genius when Indic script is detected or for Punjabi/Hindi songs
+    if not cues or has_indic_script or is_punjabi_or_hindi_requested:
         emit_progress("genius_fallback", 50, f"Fetching verified Romanized Punjabi/Hinglish lyrics from Genius API...")
         genius_cues, genius_lang = fetch_genius_lyrics_fallback(title, uploader, duration)
         if genius_cues:
-            cues = genius_cues
-            matched_lang = "hinglish"
+            # If we had YouTube timestamps, preserve timestamps and substitute Romanized text!
+            if cues and len(cues) > 5 and len(genius_cues) > 5 and has_indic_script:
+                aligned_cues = []
+                num_cues = min(len(cues), len(genius_cues))
+                for i in range(num_cues):
+                    aligned_cues.append((cues[i][0], cues[i][1], genius_cues[i][2]))
+                cues = aligned_cues
+            else:
+                cues = genius_cues
+            matched_lang = "punjabi_hinglish"
 
     emit_progress("ytdlp_done", 55, f"Audio & lyrics ready: '{title}' ({len(cues)} lines, source: {matched_lang})", {
         "title": title,
@@ -466,22 +472,6 @@ TEMPLATES = {
         "outline_width": 3,
         "shadow_depth": 2,
         "margin_v": 80,
-    },
-    "brat": {
-        "id": "brat",
-        "name": "brat",
-        "aspect_ratio": "portrait",
-        "font_name": "Arial",
-        "font_size": 58,
-        "primary_color": "&H00000000",
-        "outline_color": "&H0000CE8A",
-        "back_color": "&H0000CE8A",
-        "border_style": 3,
-        "bold": 0,
-        "outline_width": 14,
-        "shadow_depth": 0,
-        "margin_v": 450,
-        "lowercase": True,
     }
 }
 
@@ -495,33 +485,31 @@ def build_ass_and_lrc_content(
     font_name: str = "Impact",
     font_size: Optional[int] = None,
     template_key: Optional[str] = "template1",
-    custom_margin_v: Optional[int] = None,
-    custom_alignment: Optional[int] = None
+    placement: str = "center",
+    y_percent: Optional[float] = 50.0
 ) -> Tuple[str, List[Dict[str, Any]], str]:
     """
-    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3, brat),
-    custom typography, and interactive dynamic margin/alignment positioning.
+    Convert cues into ASS subtitle format configured with Template presets (1, 2, 3),
+    custom typography, and interactive dynamic placement (Center default).
     """
     tpl = TEMPLATES.get((template_key or "").lower(), TEMPLATES["template1"])
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
 
     is_portrait = (effective_aspect.lower() == "portrait" or effective_aspect == "9:16")
-    emit_progress("ass_start", 60, f"Step 2: Applying {tpl['name']} ({'Portrait 9:16' if is_portrait else 'Landscape 16:9'})...")
+    emit_progress("ass_start", 60, f"Step 2: Applying {tpl['name']} ({'Portrait 9:16' if is_portrait else 'Landscape 16:9'}) with '{placement}' placement...")
 
     if not cues:
         cues = [
             (2.0, max(6.0, audio_duration - 2.0), "[Music Playing - Native YouTube Audio]")
         ]
 
-    # Configure canvas & typography parameters
+    # Configure canvas resolution
     if is_portrait:
         res_x = 1080
         res_y = 1920
         margin_l = 70
         margin_r = 70
-        default_margin_v = tpl.get("margin_v", 440)
-        default_alignment = 2   # Bottom-center
         outline_width = tpl.get("outline_width", 4)
         shadow_depth = tpl.get("shadow_depth", 3)
     else:
@@ -529,21 +517,35 @@ def build_ass_and_lrc_content(
         res_y = 1080
         margin_l = 60
         margin_r = 60
-        default_margin_v = tpl.get("margin_v", 80)
-        default_alignment = 2
         outline_width = tpl.get("outline_width", 3)
         shadow_depth = tpl.get("shadow_depth", 2)
 
-    actual_margin_v = custom_margin_v if custom_margin_v is not None else default_margin_v
-    actual_alignment = custom_alignment if custom_alignment is not None else default_alignment
+    # Dynamic Placement configuration (Default: Center)
+    place_mode = (placement or "center").lower().strip()
+    y_pos_val = float(y_percent) if y_percent is not None else 50.0
+
+    pos_override_tag = ""
+    if place_mode == "top" or y_pos_val <= 25.0:
+        alignment = 8  # Top-center
+        margin_v = 160 if is_portrait else 90
+    elif place_mode == "bottom" or y_pos_val >= 75.0:
+        alignment = 2  # Bottom-center
+        margin_v = 400 if is_portrait else 90
+    elif place_mode == "center" and abs(y_pos_val - 50.0) < 3.0:
+        alignment = 5  # Dead Center (Middle-Center)
+        margin_v = 0
+    else:
+        # Custom precise Y position percentage
+        alignment = 5
+        margin_v = 0
+        target_y = int(res_y * (y_pos_val / 100.0))
+        pos_override_tag = f"{{\\an5\\pos({res_x // 2},{target_y})}}"
 
     actual_font_size = font_size if font_size and font_size > 0 else tpl.get("font_size", 54)
     primary_color = tpl.get("primary_color", "&H00FFFFFF")
     outline_color = tpl.get("outline_color", "&H00000000")
     back_color = tpl.get("back_color", "&H80000000")
     bold_val = tpl.get("bold", -1)
-    border_style = tpl.get("border_style", 1)
-    is_lowercase = tpl.get("lowercase", False)
 
     ass_header = f"""[Script Info]
 ; Script generated by YouTube Lyric-Video Overlay Generator
@@ -555,7 +557,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,100,100,0,0,{border_style},{outline_width},{shadow_depth},{actual_alignment},{margin_l},{margin_r},{actual_margin_v},1
+Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,100,100,0,0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -569,10 +571,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         adjusted_end = max(adjusted_start + 1.0, end_sec + offset_seconds)
 
         clean_text = text.replace("{", "\\{").replace("}", "\\}")
-        if is_lowercase:
-            clean_text = clean_text.lower()
-
-        dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{clean_text}")
+        dialogue_text = f"{pos_override_tag}{clean_text}" if pos_override_tag else clean_text
+        dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
         ts_formatted = seconds_to_lrc_timestamp(adjusted_start)
         structured_lines.append({
@@ -580,15 +580,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "timestamp": ts_formatted,
             "timeSeconds": adjusted_start,
             "endSeconds": adjusted_end,
-            "text": clean_text
+            "text": text
         })
-        raw_lrc_lines.append(f"[{ts_formatted}] {clean_text}")
+        raw_lrc_lines.append(f"[{ts_formatted}] {text}")
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogues) + "\n")
 
     raw_lrc = "\n".join(raw_lrc_lines)
-    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} events, {res_x}x{res_y}, MarginV: {actual_margin_v}).")
+    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} events, {res_x}x{res_y}, {place_mode}).")
     return output_ass_path, structured_lines, raw_lrc
 
 
@@ -661,15 +661,15 @@ def generate_lyric_video(
     font_size: Optional[int] = None,
     lang: str = "auto",
     template: str = "template1",
-    margin_v: Optional[int] = None,
-    alignment: Optional[int] = None
+    placement: str = "center",
+    y_percent: Optional[float] = 50.0
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Templates (1, 2, 3, brat), Custom Placement (margin_v/alignment), and Subtitle Language."""
+    """Main generator pipeline supporting Templates, Fonts, Languages, and Interactive Placement (Center default)."""
     tpl = TEMPLATES.get((template or "").lower(), TEMPLATES["template1"])
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
 
-    emit_progress("init", 5, f"Initiating Generator with {tpl['name']} (Lang: {lang})...")
+    emit_progress("init", 5, f"Initiating Generator with {tpl['name']} ({placement}, Lang: {lang})...")
 
     yt_data = download_youtube_audio(
         query_or_url=song_query,
@@ -688,8 +688,8 @@ def generate_lyric_video(
         font_name=effective_font,
         font_size=font_size,
         template_key=template,
-        custom_margin_v=margin_v,
-        custom_alignment=alignment
+        placement=placement,
+        y_percent=y_percent
     )
 
     render_lyric_video_ffmpeg(
@@ -712,15 +712,15 @@ def generate_lyric_video(
         "aspect_ratio": effective_aspect,
         "font_name": effective_font,
         "template": template,
-        "margin_v": margin_v,
-        "alignment": alignment,
+        "placement": placement,
+        "y_percent": y_percent,
         "language": yt_data.get("matched_lang", lang),
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
         "rawLrc": raw_lrc
     }
 
-    emit_progress("completed", 100, f"🎉 1080p MP4 ready using {tpl['name']}!", final_result)
+    emit_progress("completed", 100, f"🎉 1080p MP4 ready using {tpl['name']} ({placement.upper()})!", final_result)
     return final_result
 
 
@@ -735,8 +735,8 @@ if __name__ == "__main__":
     size = None
     lang = "auto"
     template = "template1"
-    margin_v = None
-    alignment = None
+    placement = "center"
+    ypos = 50.0
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -757,14 +757,11 @@ if __name__ == "__main__":
             lang = a.split("=")[1].strip()
         elif a.startswith("--template="):
             template = a.split("=")[1].strip()
-        elif a.startswith("--margin-v="):
+        elif a.startswith("--placement="):
+            placement = a.split("=")[1].strip()
+        elif a.startswith("--ypos="):
             try:
-                margin_v = int(a.split("=")[1])
-            except ValueError:
-                pass
-        elif a.startswith("--alignment="):
-            try:
-                alignment = int(a.split("=")[1])
+                ypos = float(a.split("=")[1])
             except ValueError:
                 pass
 
@@ -777,8 +774,8 @@ if __name__ == "__main__":
         font_size=size,
         lang=lang,
         template=template,
-        margin_v=margin_v,
-        alignment=alignment
+        placement=placement,
+        y_percent=ypos
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

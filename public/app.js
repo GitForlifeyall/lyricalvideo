@@ -10,8 +10,9 @@ const state = {
   template: 'template1',
   fontFamily: 'Impact',
   language: 'auto',
-  verticalPositionPercent: 80,
-  activeQuery: '',
+  placement: 'center',
+  ypos: 50,
+  lastQuery: 'The Weeknd - Blinding Lights'
 };
 
 // DOM Elements
@@ -25,13 +26,16 @@ const customFontInput = document.getElementById('custom-font-input');
 const langBtns = document.querySelectorAll('#lang-group .lang-pill');
 const customLangInput = document.getElementById('custom-lang-input');
 
-// Placement elements
-const verticalPosSlider = document.getElementById('vertical-pos-slider');
-const sliderPosVal = document.getElementById('slider-pos-val');
-const posPresetBtns = document.querySelectorAll('.pos-preset-btn');
-const applyPlacementBtn = document.getElementById('apply-placement-btn');
-const interactiveGuide = document.getElementById('interactive-subtitle-guide');
-const guideSampleText = document.getElementById('guide-sample-text');
+// Placement controls
+const placementPills = document.querySelectorAll('#placement-group .placement-pill');
+const yposSlider = document.getElementById('ypos-slider');
+const yposVal = document.getElementById('ypos-val');
+
+// Stage Placement controls
+const stagePlacementBtns = document.querySelectorAll('#stage-placement-group .stage-place-btn');
+const stageYposSlider = document.getElementById('stage-ypos-slider');
+const stageYposVal = document.getElementById('stage-ypos-val');
+const stageRerenderBtn = document.getElementById('stage-rerender-btn');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -87,7 +91,6 @@ let logCount = 0;
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
-  setupInteractivePlacement();
   loadVideosGallery();
 });
 
@@ -97,12 +100,12 @@ function setupEventListeners() {
     e.preventDefault();
     const query = songQueryInput.value.trim();
     if (query) {
-      state.activeQuery = query;
+      state.lastQuery = query;
       startGenerationPipeline(query);
     }
   });
 
-  // Template Selection (Template 1, 2, 3, brat)
+  // Template Selection (Template 1, 2, 3)
   templatePills.forEach((pill) => {
     pill.addEventListener('click', () => {
       templatePills.forEach(p => p.classList.remove('active'));
@@ -156,6 +159,71 @@ function setupEventListeners() {
     });
   }
 
+  // Search Bar Placement Pills
+  placementPills.forEach((pill) => {
+    pill.addEventListener('click', () => {
+      placementPills.forEach(p => p.classList.remove('active'));
+      pill.classList.add('active');
+      state.placement = pill.dataset.placement;
+      state.ypos = parseInt(pill.dataset.ypos) || 50;
+      if (yposSlider) yposSlider.value = state.ypos;
+      if (yposVal) yposVal.textContent = `${state.ypos}% (${pill.textContent.split(' ')[1] || 'Center'})`;
+      syncStagePlacementUI();
+    });
+  });
+
+  // Search Bar Range Slider
+  if (yposSlider) {
+    yposSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      state.ypos = val;
+      state.placement = val <= 25 ? 'top' : (val >= 75 ? 'bottom' : 'center');
+      if (yposVal) yposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
+      updatePlacementPills(state.placement);
+      syncStagePlacementUI();
+    });
+  }
+
+  // Stage Reposition Pills
+  stagePlacementBtns.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      stagePlacementBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state.placement = btn.dataset.placement;
+      state.ypos = parseInt(btn.dataset.ypos) || 50;
+      if (stageYposSlider) stageYposSlider.value = state.ypos;
+      if (stageYposVal) stageYposVal.textContent = `${state.ypos}% (${btn.dataset.placement.toUpperCase()})`;
+      if (yposSlider) yposSlider.value = state.ypos;
+      if (yposVal) yposVal.textContent = `${state.ypos}% (${btn.dataset.placement.toUpperCase()})`;
+      updatePlacementPills(state.placement);
+      showToast(`Placement set to ${btn.dataset.placement.toUpperCase()}`);
+    });
+  });
+
+  // Stage Range Slider
+  if (stageYposSlider) {
+    stageYposSlider.addEventListener('input', (e) => {
+      const val = parseInt(e.target.value);
+      state.ypos = val;
+      state.placement = val <= 25 ? 'top' : (val >= 75 ? 'bottom' : 'center');
+      if (stageYposVal) stageYposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
+      if (yposSlider) yposSlider.value = val;
+      if (yposVal) yposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
+      updatePlacementPills(state.placement);
+    });
+  }
+
+  // Stage Re-render Button
+  if (stageRerenderBtn) {
+    stageRerenderBtn.addEventListener('click', () => {
+      const query = state.lastQuery || songQueryInput.value.trim();
+      if (query) {
+        showToast(`Re-rendering with ${state.ypos}% (${state.placement.toUpperCase()}) placement... ⚡`);
+        startGenerationPipeline(query);
+      }
+    });
+  }
+
   // Backdrop Switcher
   backdropBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -172,111 +240,20 @@ function setupEventListeners() {
   });
 }
 
-// -------------------------------------------------------------
-// Interactive Dynamic Lyrics Placement Setup & Dragging
-// -------------------------------------------------------------
-function setupInteractivePlacement() {
-  if (!verticalPosSlider || !interactiveGuide) return;
+function updatePlacementPills(place) {
+  placementPills.forEach(p => p.classList.toggle('active', p.dataset.placement === place));
+  stagePlacementBtns.forEach(b => b.classList.toggle('active', b.dataset.placement === place));
+}
 
-  function updatePosition(percent, updateSlider = true) {
-    percent = Math.max(10, Math.min(90, Math.round(percent)));
-    state.verticalPositionPercent = percent;
-
-    interactiveGuide.style.top = `${percent}%`;
-
-    if (updateSlider && verticalPosSlider) {
-      verticalPosSlider.value = percent;
-    }
-
-    let posName = 'Center';
-    if (percent <= 30) posName = 'Top';
-    else if (percent >= 70) posName = 'Bottom';
-
-    if (sliderPosVal) {
-      sliderPosVal.textContent = `${percent}% (${posName})`;
-    }
-
-    // Update active preset button
-    posPresetBtns.forEach((btn) => {
-      if (btn.dataset.pos === 'top' && percent <= 30) btn.classList.add('active');
-      else if (btn.dataset.pos === 'middle' && percent > 30 && percent < 70) btn.classList.add('active');
-      else if (btn.dataset.pos === 'bottom' && percent >= 70) btn.classList.add('active');
-      else btn.classList.remove('active');
-    });
-  }
-
-  // Slider change
-  verticalPosSlider.addEventListener('input', (e) => {
-    updatePosition(parseFloat(e.target.value), false);
-  });
-
-  // Preset Buttons
-  posPresetBtns.forEach((btn) => {
-    btn.addEventListener('click', () => {
-      posPresetBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const pos = btn.dataset.pos;
-      if (pos === 'top') updatePosition(20);
-      else if (pos === 'middle') updatePosition(50);
-      else if (pos === 'bottom') updatePosition(80);
-    });
-  });
-
-  // Interactive Dragging on Video Canvas
-  let isDragging = false;
-
-  interactiveGuide.addEventListener('mousedown', (e) => {
-    isDragging = true;
-    e.preventDefault();
-  });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const rect = videoPreviewWrapper.getBoundingClientRect();
-    if (rect.height > 0) {
-      const yOffset = e.clientY - rect.top;
-      const percent = (yOffset / rect.height) * 100;
-      updatePosition(percent);
-    }
-  });
-
-  window.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
-
-  // Touch support for mobile dragging
-  interactiveGuide.addEventListener('touchstart', (e) => {
-    isDragging = true;
-  }, { passive: true });
-
-  window.addEventListener('touchmove', (e) => {
-    if (!isDragging || !e.touches[0]) return;
-    const rect = videoPreviewWrapper.getBoundingClientRect();
-    if (rect.height > 0) {
-      const yOffset = e.touches[0].clientY - rect.top;
-      const percent = (yOffset / rect.height) * 100;
-      updatePosition(percent);
-    }
-  }, { passive: true });
-
-  window.addEventListener('touchend', () => {
-    isDragging = false;
-  });
-
-  // Apply & Re-render button
-  if (applyPlacementBtn) {
-    applyPlacementBtn.addEventListener('click', () => {
-      const q = state.activeQuery || songQueryInput.value.trim();
-      if (q) {
-        showToast(`Re-rendering video at ${state.verticalPositionPercent}% height... ⚡`);
-        startGenerationPipeline(q);
-      }
-    });
-  }
+function syncStagePlacementUI() {
+  if (stageYposSlider) stageYposSlider.value = state.ypos;
+  if (stageYposVal) stageYposVal.textContent = `${state.ypos}% (${state.placement.toUpperCase()})`;
+  stagePlacementBtns.forEach(b => b.classList.toggle('active', b.dataset.placement === state.placement));
 }
 
 // 1. Start Server-Sent Events (SSE) Video Generation
 function startGenerationPipeline(query) {
+  state.lastQuery = query;
   if (state.isGenerating && state.currentEventSource) {
     state.currentEventSource.close();
   }
@@ -291,13 +268,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Compute exact marginV based on verticalPositionPercent and canvas orientation
-  const isPortrait = state.template !== 'template3';
-  const totalHeight = isPortrait ? 1920 : 1080;
-  const marginV = Math.round(((100 - state.verticalPositionPercent) / 100) * totalHeight);
-
-  // Connect to SSE Endpoint with template, font, language, and margin_v parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&margin_v=${marginV}`;
+  // Connect to SSE Endpoint with template, font, language, placement, and ypos parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 

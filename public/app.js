@@ -38,14 +38,17 @@ const vinylDisk = document.getElementById('vinyl-disk');
 const tabKaraoke = document.getElementById('tab-karaoke');
 const tabPlain = document.getElementById('tab-plain');
 const tabLrc = document.getElementById('tab-lrc');
+const tabJson = document.getElementById('tab-json');
 
 const paneKaraoke = document.getElementById('pane-karaoke');
 const panePlain = document.getElementById('pane-plain');
 const paneLrc = document.getElementById('pane-lrc');
+const paneJson = document.getElementById('pane-json');
 
 const karaokeLinesContainer = document.getElementById('karaoke-lines');
 const plainLyricsText = document.getElementById('plain-lyrics-text');
 const rawLrcText = document.getElementById('raw-lrc-text');
+const jsonTimestampsText = document.getElementById('json-timestamps-text');
 
 const karaokeControls = document.getElementById('karaoke-controls');
 const playBtn = document.getElementById('karaoke-play-btn');
@@ -94,10 +97,12 @@ function setupEventListeners() {
   });
 
   // Tab switching
-  [tabKaraoke, tabPlain, tabLrc].forEach((btn) => {
-    btn.addEventListener('click', () => {
-      switchTab(btn.dataset.tab);
-    });
+  [tabKaraoke, tabPlain, tabLrc, tabJson].forEach((btn) => {
+    if (btn) {
+      btn.addEventListener('click', () => {
+        switchTab(btn.dataset.tab);
+      });
+    }
   });
 
   // Copy Button
@@ -133,8 +138,8 @@ async function performSearch(query) {
     state.searchResults = data;
     renderSearchResults(data);
 
-    // Automatically select the first track with lyrics
-    const firstValid = data.find((item) => item.plainLyrics || item.syncedLyrics) || data[0];
+    // Automatically select the first track with synced or plain lyrics
+    const firstValid = data.find((item) => item.hasSyncedLyrics || item.plainLyrics) || data[0];
     selectTrack(firstValid);
   } catch (err) {
     console.error('Search error:', err);
@@ -154,7 +159,7 @@ function renderSearchResults(results) {
     card.className = 'track-card';
     card.dataset.id = track.id;
 
-    const hasSynced = !!track.syncedLyrics;
+    const hasSynced = !!(track.hasSyncedLyrics || track.syncedLyrics);
     const hasPlain = !!track.plainLyrics;
 
     card.innerHTML = `
@@ -181,7 +186,7 @@ function renderSearchResults(results) {
 }
 
 // Select and Display Track Details
-function selectTrack(track) {
+async function selectTrack(track) {
   state.selectedTrack = track;
   stopKaraokeSimulation();
 
@@ -196,7 +201,8 @@ function selectTrack(track) {
   songAlbum.textContent = track.albumName ? `Album: ${track.albumName}` : '';
 
   // Badges
-  syncedBadge.style.display = track.syncedLyrics ? 'inline-flex' : 'none';
+  const hasSynced = !!(track.hasSyncedLyrics || track.syncedLyrics);
+  syncedBadge.style.display = hasSynced ? 'inline-flex' : 'none';
   instrumentalBadge.style.display = track.instrumental ? 'inline-flex' : 'none';
 
   if (track.duration) {
@@ -208,18 +214,45 @@ function selectTrack(track) {
     durationBadge.style.display = 'none';
   }
 
-  // Parse LRC if available
-  state.parsedLrcLines = parseLRC(track.syncedLyrics || '');
+  // Use pre-parsed lines if available from backend, or parse locally
+  state.parsedLrcLines = track.syncedLines || parseLRC(track.syncedLyrics || '');
 
   // Populate Panes
   renderKaraokeLines();
   plainLyricsText.textContent = track.plainLyrics || (track.instrumental ? '[Instrumental - No Lyrics]' : 'No plain lyrics available.');
   rawLrcText.textContent = track.syncedLyrics || 'No synced LRC timestamps available for this track.';
 
+  // Structured JSON Timestamps representation
+  const jsonPayload = {
+    id: track.id,
+    trackName: track.trackName || track.name,
+    artistName: track.artistName,
+    albumName: track.albumName,
+    durationSeconds: track.duration,
+    hasSyncedLyrics: hasSynced,
+    totalLines: state.parsedLrcLines.length,
+    syncedLines: state.parsedLrcLines,
+    rawLrc: track.syncedLyrics || null
+  };
+  jsonTimestampsText.textContent = JSON.stringify(jsonPayload, null, 2);
+
+  // Sync with Backend active session
+  try {
+    fetch('/api/lyrics/select', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ track })
+    }).catch(err => console.warn('Backend sync notice:', err));
+  } catch (e) {
+    // Non-blocking
+  }
+
   // Show/Hide Karaoke Simulation controls based on LRC availability
   if (state.parsedLrcLines.length > 0) {
     karaokeControls.style.display = 'flex';
     tabKaraoke.style.display = 'inline-block';
+    tabLrc.style.display = 'inline-block';
+    tabJson.style.display = 'inline-block';
     switchTab('karaoke');
   } else {
     karaokeControls.style.display = 'none';
@@ -237,20 +270,23 @@ function parseLRC(lrcText) {
   const result = [];
   const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/;
 
-  lines.forEach((line, index) => {
+  let idx = 0;
+  lines.forEach((line) => {
     const match = line.match(timeRegex);
     if (match) {
       const minutes = parseInt(match[1], 10);
       const seconds = parseInt(match[2], 10);
       const millis = match[3] ? (match[3].length === 2 ? parseInt(match[3], 10) * 10 : parseInt(match[3], 10)) : 0;
+      const totalSeconds = parseFloat((minutes * 60 + seconds + millis / 1000).toFixed(3));
       const totalMs = minutes * 60000 + seconds * 1000 + millis;
       const text = match[4].trim();
 
       if (text.length > 0) {
         result.push({
-          index,
+          index: idx++,
+          timestamp: `${match[1]}:${match[2]}${match[3] ? '.' + match[3] : ''}`,
+          timeSeconds: totalSeconds,
           timeMs: totalMs,
-          timeFormatted: `${match[1]}:${match[2]}`,
           text: text,
         });
       }
@@ -278,7 +314,7 @@ function renderKaraokeLines() {
     row.className = 'lyric-line';
     row.dataset.index = idx;
     row.innerHTML = `
-      <span class="lyric-time">${line.timeFormatted}</span>
+      <span class="lyric-time">${escapeHtml(line.timestamp || line.timeFormatted)}</span>
       <span class="lyric-text">${escapeHtml(line.text)}</span>
     `;
 
@@ -357,13 +393,14 @@ function resetKaraokeSimulation() {
 function switchTab(tabKey) {
   state.currentTab = tabKey;
 
-  [tabKaraoke, tabPlain, tabLrc].forEach((btn) => {
-    btn.classList.toggle('active', btn.dataset.tab === tabKey);
+  [tabKaraoke, tabPlain, tabLrc, tabJson].forEach((btn) => {
+    if (btn) btn.classList.toggle('active', btn.dataset.tab === tabKey);
   });
 
-  paneKaraoke.classList.toggle('active', tabKey === 'karaoke');
-  panePlain.classList.toggle('active', tabKey === 'plain');
-  paneLrc.classList.toggle('active', tabKey === 'lrc');
+  if (paneKaraoke) paneKaraoke.classList.toggle('active', tabKey === 'karaoke');
+  if (panePlain) panePlain.classList.toggle('active', tabKey === 'plain');
+  if (paneLrc) paneLrc.classList.toggle('active', tabKey === 'lrc');
+  if (paneJson) paneJson.classList.toggle('active', tabKey === 'json');
 }
 
 // Copy to Clipboard
@@ -371,7 +408,9 @@ function handleCopy() {
   if (!state.selectedTrack) return;
 
   let textToCopy = '';
-  if (state.currentTab === 'lrc' && state.selectedTrack.syncedLyrics) {
+  if (state.currentTab === 'json') {
+    textToCopy = jsonTimestampsText.textContent;
+  } else if (state.currentTab === 'lrc' && state.selectedTrack.syncedLyrics) {
     textToCopy = state.selectedTrack.syncedLyrics;
   } else {
     textToCopy = state.selectedTrack.plainLyrics || state.selectedTrack.syncedLyrics || '';
@@ -383,28 +422,45 @@ function handleCopy() {
   }
 
   navigator.clipboard.writeText(textToCopy)
-    .then(() => showToast('Lyrics copied to clipboard! 🎉'))
+    .then(() => showToast('Copied to clipboard! 🎉'))
     .catch(() => showToast('Failed to copy.'));
 }
 
-// Download File (.lrc or .txt)
+// Download File (.lrc, .json, or .txt)
 function handleDownload() {
   if (!state.selectedTrack) return;
 
   const track = state.selectedTrack;
+  const isJson = state.currentTab === 'json';
   const isLrc = state.currentTab === 'lrc' || (track.syncedLyrics && state.currentTab === 'karaoke');
-  const content = isLrc && track.syncedLyrics ? track.syncedLyrics : (track.plainLyrics || track.syncedLyrics || '');
+
+  let content = '';
+  let extension = 'txt';
+  let mimeType = 'text/plain';
+
+  if (isJson) {
+    content = jsonTimestampsText.textContent;
+    extension = 'json';
+    mimeType = 'application/json';
+  } else if (isLrc && track.syncedLyrics) {
+    content = track.syncedLyrics;
+    extension = 'lrc';
+    mimeType = 'application/x-subrip';
+  } else {
+    content = track.plainLyrics || track.syncedLyrics || '';
+    extension = 'txt';
+  }
 
   if (!content) {
-    showToast('No lyrics to download!');
+    showToast('No content to download!');
     return;
   }
 
   const safeTitle = (track.trackName || 'lyrics').replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const safeArtist = (track.artistName || 'artist').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const filename = `${safeArtist}-${safeTitle}.${isLrc ? 'lrc' : 'txt'}`;
+  const filename = `${safeArtist}-${safeTitle}.${extension}`;
 
-  const blob = new Blob([content], { type: isLrc ? 'application/x-subrip' : 'text/plain' });
+  const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;

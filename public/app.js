@@ -189,18 +189,16 @@ function handleProgressUpdate(data) {
   appendConsoleLog(`[${percent}%] ${message}`);
 
   // Step-specific updates
-  if (step === 'audio_start') {
-    markStepActive(stepAudio, stepAudioStatus, stepAudioDetail, 'Searching YouTube...');
-  } else if (step === 'audio_done') {
-    markStepDone(stepAudio, stepAudioStatus, stepAudioDetail, `Extracted MP3 (${details.duration || 0}s)`);
-  } else if (step === 'lyrics_start') {
-    markStepActive(stepLyrics, stepLyricsStatus, stepLyricsDetail, 'Querying LRCLIB...');
-  } else if (step === 'lyrics_done') {
-    markStepDone(stepLyrics, stepLyricsStatus, stepLyricsDetail, `${details.track_name} by ${details.artist_name}`);
+  if (step === 'ytdlp_start' || step === 'ytdlp_downloading') {
+    markStepActive(stepAudio, stepAudioStatus, stepAudioDetail, 'Downloading MP3 audio...');
+    markStepActive(stepLyrics, stepLyricsStatus, stepLyricsDetail, 'Fetching YouTube subtitles & captions...');
+  } else if (step === 'ytdlp_done') {
+    markStepDone(stepAudio, stepAudioStatus, stepAudioDetail, `Extracted audio (${details.duration || 0}s)`);
+    markStepDone(stepLyrics, stepLyricsStatus, stepLyricsDetail, `Extracted ${details.subtitles_count || 1} caption stream(s)`);
   } else if (step === 'ass_start') {
-    markStepActive(stepAss, stepAssStatus, stepAssDetail, 'Styling 1080p canvas...');
+    markStepActive(stepAss, stepAssStatus, stepAssDetail, 'Formatting 1080p canvas...');
   } else if (step === 'ass_done') {
-    markStepDone(stepAss, stepAssStatus, stepAssDetail, 'Converted to styled .ASS');
+    markStepDone(stepAss, stepAssStatus, stepAssDetail, 'Generated styled 1080p ASS');
   } else if (step === 'ffmpeg_start' || step === 'ffmpeg_rendering') {
     markStepActive(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, 'Rendering VP9 yuva420p video...');
   } else if (step === 'ffmpeg_done' || step === 'completed') {

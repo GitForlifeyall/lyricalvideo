@@ -57,14 +57,14 @@
     <!-- Main Generator Hero -->
     <section class="generator-hero">
       <div class="hero-badge-row">
-        <span class="badge badge-accent">⚡ Parallel Python Engine</span>
+        <span class="badge badge-accent">⚡ 100% YouTube Engine</span>
         <span class="badge badge-subtle">🎬 1080p 30fps VP9 Alpha Overlay</span>
-        <span class="badge badge-subtle">🎵 Auto YouTube &amp; LRCLIB Sync</span>
+        <span class="badge badge-subtle">📝 Native Captions &amp; Subtitles</span>
       </div>
 
-      <h2 class="hero-headline">Generate Transparent Lyric Videos in Seconds</h2>
+      <h2 class="hero-headline">YouTube-Powered Transparent Lyric Video Generator</h2>
       <p class="hero-subheadline">
-        Enter any song name. Our parallel engine simultaneously downloads audio via <code>yt-dlp</code>, pulls synced lyrics from <code>LRCLIB</code>, styles a 1080p <code>.ass</code> canvas, and renders a transparent <code>.webm</code> video overlay with <code>FFmpeg</code>.
+        Enter any song name or paste a YouTube URL. Our engine uses <code>yt-dlp</code> to extract high-quality audio and perfectly synchronized video subtitles/captions simultaneously, styling a 1080p <code>.ass</code> canvas and rendering a transparent <code>.webm</code> video overlay with <code>FFmpeg</code>.
       </p>
 
       <!-- Command Search Form -->
@@ -81,8 +81,8 @@
             type="text"
             id="song-query-input"
             class="command-input"
-            placeholder="Enter song name (e.g. Rick Astley - Never Gonna Give You Up)"
-            value="Rick Astley - Never Gonna Give You Up"
+            placeholder="Enter song name or paste YouTube URL (e.g. The Weeknd - Blinding Lights)"
+            value="The Weeknd - Blinding Lights"
             autocomplete="off"
             required
           />
@@ -105,8 +105,8 @@
       </div>
 
       <div class="offset-quick-bar">
-        <span class="preset-label">Audio-Lyric Timing:</span>
-        <button type="button" class="offset-chip active" data-offset="0.0">⚡ Auto Studio Sync (0.0s)</button>
+        <span class="preset-label">Fine Timing Adjust:</span>
+        <button type="button" class="offset-chip active" data-offset="0.0">⚡ Exact YouTube Sync (0.0s)</button>
         <button type="button" class="offset-chip" data-offset="-1.0">-1.0s</button>
         <button type="button" class="offset-chip" data-offset="-0.5">-0.5s</button>
         <button type="button" class="offset-chip" data-offset="+0.5">+0.5s</button>
@@ -119,7 +119,7 @@
       <div class="pipeline-header">
         <div class="pipeline-title-box">
           <div class="pulse-dot"></div>
-          <h3 id="pipeline-status-text">Running Parallel Generation Pipeline...</h3>
+          <h3 id="pipeline-status-text">Running YouTube Generation Pipeline...</h3>
         </div>
         <span id="pipeline-percent-badge" class="badge badge-accent">0%</span>
       </div>
@@ -135,8 +135,8 @@
         <div class="step-card" id="step-audio">
           <div class="step-icon-wrap">🎧</div>
           <div class="step-card-content">
-            <span class="step-label">Task A (Audio Engine)</span>
-            <strong class="step-name">YouTube Extraction</strong>
+            <span class="step-label">Task A (yt-dlp Audio)</span>
+            <strong class="step-name">YouTube MP3 Extraction</strong>
             <p class="step-detail" id="step-audio-detail">Waiting to start...</p>
           </div>
           <div class="step-status-indicator" id="step-audio-status">⏳</div>
@@ -146,8 +146,8 @@
         <div class="step-card" id="step-lyrics">
           <div class="step-icon-wrap">📝</div>
           <div class="step-card-content">
-            <span class="step-label">Task B (Lyric Engine)</span>
-            <strong class="step-name">LRCLIB API Sync</strong>
+            <span class="step-label">Task B (yt-dlp Subtitles)</span>
+            <strong class="step-name">Captions &amp; CC Stream</strong>
             <p class="step-detail" id="step-lyrics-detail">Waiting to start...</p>
           </div>
           <div class="step-status-indicator" id="step-lyrics-status">⏳</div>
@@ -157,7 +157,7 @@
         <div class="step-card" id="step-ass">
           <div class="step-icon-wrap">🎨</div>
           <div class="step-card-content">
-            <span class="step-label">Step 2 (LRC to ASS)</span>
+            <span class="step-label">Step 2 (VTT to ASS)</span>
             <strong class="step-name">1080p ASS Styler</strong>
             <p class="step-detail" id="step-ass-detail">Waiting...</p>
           </div>

@@ -518,6 +518,35 @@ body {
   border-color: transparent;
 }
 
+/* brat Template Accent */
+.brat-pill:hover {
+  border-color: #8ace00;
+  box-shadow: 0 0 12px rgba(138, 206, 0, 0.25);
+}
+
+.brat-badge {
+  background: #8ace00 !important;
+  color: #000000 !important;
+  font-family: Arial, sans-serif !important;
+  font-weight: 900 !important;
+  text-transform: lowercase !important;
+  letter-spacing: -0.04em !important;
+  border-color: #8ace00 !important;
+}
+
+.brat-pill.active {
+  background: rgba(138, 206, 0, 0.18) !important;
+  border-color: #8ace00 !important;
+  box-shadow: 0 0 16px rgba(138, 206, 0, 0.4) !important;
+  color: #ffffff !important;
+}
+
+.brat-pill.active .brat-badge {
+  background: #8ace00 !important;
+  color: #000000 !important;
+  box-shadow: 0 0 10px rgba(138, 206, 0, 0.6);
+}
+
 .offset-quick-bar {
   display: flex;
   align-items: center;

@@ -8,61 +8,60 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,Impact,62,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,3,2,70,70,440,1
+Style: Default,Arial,58,&H00000000,&H000000FF,&H0000CE8A,&H0000CE8A,0,0,0,0,100,100,0,0,3,14,0,2,70,70,450,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 0,0:00:05.00,0:00:07.85,Default,,0,0,0,,Gal sun lallaria ve
-Dialogue: 0,0:00:08.00,0:00:10.85,Default,,0,0,0,,Ah lok mere te hasde
-Dialogue: 0,0:00:11.00,0:00:13.85,Default,,0,0,0,,Paise jyada dedugi
-Dialogue: 0,0:00:14.00,0:00:16.85,Default,,0,0,0,,Matching krdega ta dsde
-Dialogue: 0,0:00:17.00,0:00:19.85,Default,,0,0,0,,Sunla ve dito same chahidi
-Dialogue: 0,0:00:20.00,0:00:22.85,Default,,0,0,0,,Ah le photo ve Ferrari laal di
-Dialogue: 0,0:00:23.00,0:00:25.85,Default,,0,0,0,,Chunni meri rangde lallaria
-Dialogue: 0,0:00:26.00,0:00:28.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
-Dialogue: 0,0:00:29.00,0:00:31.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:00:32.00,0:00:34.85,Default,,0,0,0,,Chunni meri rangde lallaria
-Dialogue: 0,0:00:35.00,0:00:37.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:00:38.00,0:00:40.85,Default,,0,0,0,,Oda pange lagde a
-Dialogue: 0,0:00:41.00,0:00:43.85,Default,,0,0,0,,Ohnu change lagde a
-Dialogue: 0,0:00:44.00,0:00:46.85,Default,,0,0,0,,Tahi socha kundla pvaalva
-Dialogue: 0,0:00:47.00,0:00:49.85,Default,,0,0,0,,Socha shareaamm hoja
-Dialogue: 0,0:00:50.00,0:00:52.85,Default,,0,0,0,,Sochdi aan naam ohda
-Dialogue: 0,0:00:53.00,0:00:55.85,Default,,0,0,0,,Gutt te tatto bnwalava
-Dialogue: 0,0:00:56.00,0:00:58.85,Default,,0,0,0,,Sochdi fer taaldi mai
-Dialogue: 0,0:00:59.00,0:01:01.85,Default,,0,0,0,,Phantom de nal di mai
-Dialogue: 0,0:01:02.00,0:01:04.85,Default,,0,0,0,,Ik hor kurti svaalva
-Dialogue: 0,0:01:05.00,0:01:07.85,Default,,0,0,0,,Ohnu dekh ke ta Meri hojve
-Dialogue: 0,0:01:08.00,0:01:10.85,Default,,0,0,0,,Meri umr vdhi de nal di
-Dialogue: 0,0:01:11.00,0:01:13.85,Default,,0,0,0,,Ve chunni mеri rangde lallaria
-Dialogue: 0,0:01:14.00,0:01:16.85,Default,,0,0,0,,Mere yaar di gaddi dе naal di
-Dialogue: 0,0:01:17.00,0:01:19.85,Default,,0,0,0,,Chunni meri rangde lallaria
-Dialogue: 0,0:01:20.00,0:01:22.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:01:23.00,0:01:25.85,Default,,0,0,0,,Mere laye dekhle je kudiye kwaria ne dekhi ve duppate tere vikdee
-Dialogue: 0,0:01:26.00,0:01:28.85,Default,,0,0,0,,Eni sohni chunni lagge jatti te lyi k menu Jdo oho dekhe gaana likhde
-Dialogue: 0,0:01:29.00,0:01:31.85,Default,,0,0,0,,Kam menu bde
-Dialogue: 0,0:01:32.00,0:01:34.85,Default,,0,0,0,,Saneaare kolo karhe
-Dialogue: 0,0:01:35.00,0:01:37.85,Default,,0,0,0,,Nale hle mai Sephora geda marna
-Dialogue: 0,0:01:38.00,0:01:40.85,Default,,0,0,0,,Aunda ae pyar ohda
-Dialogue: 0,0:01:41.00,0:01:43.85,Default,,0,0,0,,Hona ae deedar ohda
-Dialogue: 0,0:01:44.00,0:01:46.85,Default,,0,0,0,,Chaj nal hoi mai tyaar na
-Dialogue: 0,0:01:47.00,0:01:49.85,Default,,0,0,0,,Dar lgda na kite rehjva
-Dialogue: 0,0:01:50.00,0:01:52.85,Default,,0,0,0,,Saddi na saddi de nal de
-Dialogue: 0,0:01:53.00,0:01:55.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
-Dialogue: 0,0:01:56.00,0:01:58.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:01:59.00,0:02:01.85,Default,,0,0,0,,Chunni meri rangde lallaria
-Dialogue: 0,0:02:02.00,0:02:04.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:05.00,0:02:07.85,Default,,0,0,0,,(Ve chunni meri rangde lallaria
-Dialogue: 0,0:02:08.00,0:02:10.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:11.00,0:02:13.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:14.00,0:02:16.85,Default,,0,0,0,,Mere yaar di gaddi de naal di)
-Dialogue: 0,0:02:17.00,0:02:19.85,Default,,0,0,0,,Aujle nu lor meri hojave
-Dialogue: 0,0:02:20.00,0:02:22.85,Default,,0,0,0,,Ghar di kaddi de naal di
-Dialogue: 0,0:02:23.00,0:02:25.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
-Dialogue: 0,0:02:26.00,0:02:28.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:29.00,0:02:31.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
-Dialogue: 0,0:02:32.00,0:02:34.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:35.00,0:02:37.85,Default,,0,0,0,,Ve chunni meri rangde lallaria
-Dialogue: 0,0:02:38.00,0:02:40.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
-Dialogue: 0,0:02:41.00,0:02:43.85,Default,,0,0,0,,Chunni meri rangde lallaria ve
-Dialogue: 0,0:02:44.00,0:02:46.85,Default,,0,0,0,,Mere yaar di gaddi de naal di
+Dialogue: 0,0:00:08.94,0:00:21.00,Default,,0,0,0,,[music]
+Dialogue: 0,0:00:18.00,0:00:23.60,Default,,0,0,0,,okay okay okay okay
+Dialogue: 0,0:00:21.00,0:00:27.12,Default,,0,0,0,,okay here we
+Dialogue: 0,0:00:23.60,0:00:30.48,Default,,0,0,0,,go when i'm in the club when i'm at the
+Dialogue: 0,0:00:27.12,0:00:31.88,Default,,0,0,0,,house 365 party girl should we do a
+Dialogue: 0,0:00:30.48,0:00:34.16,Default,,0,0,0,,little key should we have a little line
+Dialogue: 0,0:00:31.88,0:00:38.64,Default,,0,0,0,,when to go real wild when i'm meet me in
+Dialogue: 0,0:00:34.16,0:00:41.32,Default,,0,0,0,,the bathroom if 365 party girl french
+Dialogue: 0,0:00:38.64,0:00:43.48,Default,,0,0,0,,the resue push my back look hot when i'm
+Dialogue: 0,0:00:41.32,0:00:46.40,Default,,0,0,0,,no i really don't stop when i'm going to
+Dialogue: 0,0:00:43.48,0:00:47.72,Default,,0,0,0,,jump when it drops when i'm 999 it's a
+Dialogue: 0,0:00:46.40,0:00:49.32,Default,,0,0,0,,good time who the are you i'm a
+Dialogue: 0,0:00:47.72,0:00:50.88,Default,,0,0,0,,brat when i'm bumping that now i want to
+Dialogue: 0,0:00:49.32,0:00:53.36,Default,,0,0,0,,hit my track are you bumping that till
+Dialogue: 0,0:00:50.88,0:00:55.20,Default,,0,0,0,,the windows crack i'll be no i never go
+Dialogue: 0,0:00:53.36,0:00:59.04,Default,,0,0,0,,home don't sleep don't eat just do it on
+Dialogue: 0,0:00:55.20,0:01:01.44,Default,,0,0,0,,repeat keep when i'm in the club y 365
+Dialogue: 0,0:00:59.04,0:01:03.20,Default,,0,0,0,,party girl should we do a little ky we
+Dialogue: 0,0:01:01.44,0:01:06.60,Default,,0,0,0,,have a little want to go real wild when
+Dialogue: 0,0:01:03.20,0:01:11.84,Default,,0,0,0,,i'm meet me in the bathroom if you 365
+Dialogue: 0,0:01:06.60,0:01:14.36,Default,,0,0,0,,party girl french res my back look i
+Dialogue: 0,0:01:11.84,0:01:17.20,Default,,0,0,0,,really don't stop going to jump when it
+Dialogue: 0,0:01:14.36,0:01:18.72,Default,,0,0,0,,drops down 9 it's a good time who the
+Dialogue: 0,0:01:17.20,0:01:20.24,Default,,0,0,0,,are you i'm a brat when i'm bumping
+Dialogue: 0,0:01:18.72,0:01:22.04,Default,,0,0,0,,that no one want to hit my track you
+Dialogue: 0,0:01:20.24,0:01:26.36,Default,,0,0,0,,bumping that till the windows crack i'll
+Dialogue: 0,0:01:22.04,0:01:26.36,Default,,0,0,0,,be bumping that no never go home
+Dialogue: 0,0:01:27.48,0:01:33.40,Default,,0,0,0,,don't 36 girl should we do a little key
+Dialogue: 0,0:01:31.36,0:01:36.80,Default,,0,0,0,,should we have a little on while when
+Dialogue: 0,0:01:33.40,0:01:37.19,Default,,0,0,0,,i'm meet me in the bathroom with you 365
+Dialogue: 0,0:01:36.80,0:01:39.84,Default,,0,0,0,,party
+Dialogue: 0,0:01:37.19,0:01:42.84,Default,,0,0,0,,[music]
+Dialogue: 0,0:01:39.84,0:01:45.48,Default,,0,0,0,,girl when no i really don't stop when
+Dialogue: 0,0:01:42.84,0:01:47.56,Default,,0,0,0,,i'm going top when it drops when i'm
+Dialogue: 0,0:01:45.48,0:01:49.24,Default,,0,0,0,,down 999 it's a good time who the
+Dialogue: 0,0:01:47.56,0:01:50.44,Default,,0,0,0,,are you i'm a brat when i'm bumping that
+Dialogue: 0,0:01:49.24,0:01:52.20,Default,,0,0,0,,no i want to hear my track are you
+Dialogue: 0,0:01:50.44,0:01:54.08,Default,,0,0,0,,bumping that till the windows crack i'll
+Dialogue: 0,0:01:52.20,0:01:55.60,Default,,0,0,0,,be bumping that no i'll never go home
+Dialogue: 0,0:01:54.08,0:01:59.68,Default,,0,0,0,,don't sleep don't eat just do it on
+Dialogue: 0,0:01:55.60,0:02:00.52,Default,,0,0,0,,repeat keep i'm in the cl i'm 365 party
+Dialogue: 0,0:01:59.68,0:02:02.52,Default,,0,0,0,,girl
+Dialogue: 0,0:02:00.52,0:02:08.24,Default,,0,0,0,,should we do a little should we have a
+Dialogue: 0,0:02:02.52,0:02:08.24,Default,,0,0,0,,little when i'm in the bathroom
+Dialogue: 0,0:02:23.19,0:02:27.08,Default,,0,0,0,,[music]
+Dialogue: 0,0:02:25.20,0:02:29.96,Default,,0,0,0,,36y
+Dialogue: 0,0:02:27.08,0:02:32.72,Default,,0,0,0,,keep keep
+Dialogue: 0,0:02:29.96,0:02:34.60,Default,,0,0,0,,keep up happing
+Dialogue: 0,0:02:32.72,0:02:36.48,Default,,0,0,0,,keep
+Dialogue: 0,0:02:34.60,0:02:40.48,Default,,0,0,0,,keeping
+Dialogue: 0,0:02:36.48,0:02:40.48,Default,,0,0,0,,keeping keeping
+Dialogue: 0,0:02:45.27,0:03:25.09,Default,,0,0,0,,[music]
+Dialogue: 0,0:03:26.84,0:03:30.16,Default,,0,0,0,,open that

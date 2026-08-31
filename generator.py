@@ -60,16 +60,43 @@ def fetch_audio_task(song_query: str, output_audio_path: str = "temp_audio.mp3")
                 "preferredquality": "192",
             }
         ],
-        "default_search": "ytsearch1",
+        "default_search": "ytsearch3",
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["mweb", "android", "web", "ios"]
+            }
+        },
+        "http_headers": {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+        },
+        "retries": 3,
+        "fragment_retries": 3,
     }
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        search_query = f"ytsearch1:{song_query}"
-        info = ydl.extract_info(search_query, download=True)
-        video_info = info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
+        search_query = f"ytsearch3:{song_query}"
+        info = ydl.extract_info(search_query, download=False)
+        entries = info.get("entries", [info]) if info else []
+        if not entries:
+            raise ValueError(f"No YouTube audio tracks found for '{song_query}'")
+
+        download_success = False
+        video_info = None
+        for entry in entries:
+            try:
+                ydl.download([entry["webpage_url"]])
+                video_info = entry
+                download_success = True
+                break
+            except Exception as dl_err:
+                print(f"[Warning] Candidate download failed: {dl_err}. Trying next candidate...")
+
+        if not download_success or not video_info:
+            raise ValueError(f"Failed to download audio track for '{song_query}'")
 
     duration = video_info.get("duration")
     title = video_info.get("title", song_query)

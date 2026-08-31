@@ -3,25 +3,27 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const LYRICS_DIR = path.join(__dirname, '../lyrics');
 
-// Ensure lyrics directory exists
-if (!fs.existsSync(LYRICS_DIR)) {
-  fs.mkdirSync(LYRICS_DIR, { recursive: true });
-}
+const LYRICS_DIR = path.join(__dirname, '../lyrics');
+const VIDEOS_DIR = path.join(__dirname, '../public/videos');
+
+// Ensure directories exist
+if (!fs.existsSync(LYRICS_DIR)) fs.mkdirSync(LYRICS_DIR, { recursive: true });
+if (!fs.existsSync(VIDEOS_DIR)) fs.mkdirSync(VIDEOS_DIR, { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 const USER_AGENT = 'LyricalVideo/1.0 (https://github.com/GitForlifeyall/lyricalvideo)';
 
-// In-memory store for currently active/selected song lyrics and timestamps
+// In-memory store for active session
 let currentSongSession = null;
 
 // Middleware
@@ -29,14 +31,13 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static frontend assets and saved lyrics
+// Serve static frontend assets and directories
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/lyrics', express.static(LYRICS_DIR));
+app.use('/videos', express.static(VIDEOS_DIR));
 
 /**
  * Utility: Parse raw LRC text into structured timestamps JSON
- * @param {string} lrcText 
- * @returns {Array<{index: number, timestamp: string, timeSeconds: number, timeMs: number, text: string}>}
  */
 export function parseLrcTimestamps(lrcText) {
   if (!lrcText || typeof lrcText !== 'string') return [];
@@ -77,8 +78,135 @@ app.get('/health', (req, res) => {
 });
 
 /**
+ * GET /api/generate-video-stream?q=...
+ * Server-Sent Events (SSE) streaming endpoint that runs generator.py in Python
+ * and delivers real-time progress events to the frontend.
+ */
+app.get('/api/generate-video-stream', (req, res) => {
+  const query = req.query.q;
+  if (!query) {
+    return res.status(400).json({ error: 'Query parameter "q" is required' });
+  }
+
+  // Setup SSE headers
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendSSE = (event, data) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  sendSSE('start', { message: `Initiating video generation for "${query}"...`, query });
+
+  const safeName = query.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
+  const videoFileName = `${safeName}_${Date.now()}.webm`;
+  const videoOutputPath = path.join(VIDEOS_DIR, videoFileName);
+  const tempAudioPath = path.join(VIDEOS_DIR, `${safeName}_temp.mp3`);
+  const tempAssPath = path.join(VIDEOS_DIR, `${safeName}_temp.ass`);
+
+  const pythonScript = path.join(__dirname, '../generator.py');
+  const pythonProcess = spawn('python', [
+    pythonScript,
+    query,
+    videoOutputPath,
+    '--json-progress'
+  ], {
+    cwd: path.join(__dirname, '..')
+  });
+
+  let latestResult = null;
+
+  pythonProcess.stdout.on('data', (data) => {
+    const lines = data.toString().split('\n');
+    for (const line of lines) {
+      if (line.startsWith('__JSON_PROGRESS__')) {
+        try {
+          const jsonStr = line.replace('__JSON_PROGRESS__', '').trim();
+          const parsed = JSON.parse(jsonStr);
+          sendSSE('progress', parsed);
+        } catch (e) {
+          // ignore parsing error
+        }
+      } else if (line.startsWith('__FINAL_RESULT__')) {
+        try {
+          const jsonStr = line.replace('__FINAL_RESULT__', '').trim();
+          latestResult = JSON.parse(jsonStr);
+        } catch (e) {}
+      } else if (line.trim()) {
+        sendSSE('log', { message: line.trim() });
+      }
+    }
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    const msg = data.toString().trim();
+    if (msg) {
+      sendSSE('log', { message: msg });
+    }
+  });
+
+  pythonProcess.on('close', (code) => {
+    if (code === 0) {
+      const responseData = {
+        status: 'success',
+        query,
+        videoFileName,
+        videoUrl: `/videos/${videoFileName}`,
+        metadata: latestResult || {
+          output_path: videoOutputPath,
+          videoUrl: `/videos/${videoFileName}`
+        }
+      };
+      sendSSE('complete', responseData);
+    } else {
+      sendSSE('error', { error: `Python generator exited with code ${code}` });
+    }
+    res.end();
+  });
+
+  req.on('close', () => {
+    pythonProcess.kill();
+  });
+});
+
+/**
+ * GET /api/videos
+ * List all rendered transparent lyric videos
+ */
+app.get('/api/videos', async (req, res) => {
+  try {
+    if (!fs.existsSync(VIDEOS_DIR)) {
+      return res.json({ total: 0, videos: [] });
+    }
+
+    const files = await fs.promises.readdir(VIDEOS_DIR);
+    const webmFiles = files.filter(f => f.endsWith('.webm'));
+
+    const list = await Promise.all(
+      webmFiles.map(async (filename) => {
+        const stat = await fs.promises.stat(path.join(VIDEOS_DIR, filename));
+        return {
+          filename,
+          url: `/videos/${filename}`,
+          sizeBytes: stat.size,
+          sizeMb: (stat.size / (1024 * 1024)).toFixed(2),
+          createdAt: stat.birthtime || stat.mtime
+        };
+      })
+    );
+
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return res.json({ total: list.length, videos: list });
+  } catch (err) {
+    console.error('Error listing videos:', err);
+    return res.status(500).json({ error: 'Failed to list videos' });
+  }
+});
+
+/**
  * GET /api/lyrics/synced
- * Search and return song metadata, raw synced LRC text, and parsed JSON timestamps
  */
 app.get('/api/lyrics/synced', async (req, res) => {
   try {
@@ -111,7 +239,6 @@ app.get('/api/lyrics/synced', async (req, res) => {
       return res.status(404).json({ error: 'No songs found matching query', query: q || track_name });
     }
 
-    // Pick best match (prefer one with syncedLyrics)
     const bestMatch = searchResults.find(item => !!(item.syncedLyrics && item.syncedLyrics.trim().length > 0)) || searchResults[0];
     const parsedLines = parseLrcTimestamps(bestMatch.syncedLyrics || '');
 
@@ -130,9 +257,7 @@ app.get('/api/lyrics/synced', async (req, res) => {
       allMatchesCount: searchResults.length
     };
 
-    // Save as current active session
     currentSongSession = resultPayload;
-
     return res.json(resultPayload);
   } catch (error) {
     console.error('Error fetching synced lyrics:', error);
@@ -142,7 +267,6 @@ app.get('/api/lyrics/synced', async (req, res) => {
 
 /**
  * GET /api/lyrics/search
- * Standard LRCLIB search endpoint with raw results list
  */
 app.get('/api/lyrics/search', async (req, res) => {
   try {
@@ -171,8 +295,6 @@ app.get('/api/lyrics/search', async (req, res) => {
     }
 
     const data = await response.json();
-    
-    // Attach parsed syncedLines and sort tracks with synced lyrics first
     const formattedData = Array.isArray(data) ? data
       .map(item => ({
         ...item,
@@ -191,7 +313,6 @@ app.get('/api/lyrics/search', async (req, res) => {
 
 /**
  * POST /api/lyrics/save
- * Save the synchronized JSON time-synced file to the backend's `lyrics/` folder
  */
 app.post('/api/lyrics/save', async (req, res) => {
   try {
@@ -232,7 +353,6 @@ app.post('/api/lyrics/save', async (req, res) => {
 
     await fs.promises.writeFile(filePath, JSON.stringify(payloadToSave, null, 2), 'utf-8');
 
-    // Also write companion .lrc file if synced lyrics exist
     if (track.syncedLyrics) {
       const lrcFilename = filename.replace(/\.json$/, '.lrc');
       const lrcFilePath = path.join(LYRICS_DIR, lrcFilename);
@@ -255,7 +375,6 @@ app.post('/api/lyrics/save', async (req, res) => {
 
 /**
  * GET /api/lyrics/saved
- * List all saved lyric files in the `lyrics/` directory
  */
 app.get('/api/lyrics/saved', async (req, res) => {
   try {
@@ -293,25 +412,7 @@ app.get('/api/lyrics/saved', async (req, res) => {
 });
 
 /**
- * POST /api/lyrics/parse-lrc
- * Parse arbitrary LRC text passed in request body into JSON timestamps
- */
-app.post('/api/lyrics/parse-lrc', (req, res) => {
-  const { lrc } = req.body;
-  if (typeof lrc !== 'string') {
-    return res.status(400).json({ error: 'Field "lrc" (string) is required' });
-  }
-
-  const lines = parseLrcTimestamps(lrc);
-  return res.json({
-    totalLines: lines.length,
-    lines: lines
-  });
-});
-
-/**
  * POST /api/lyrics/select
- * Save or register the active track and its timestamps in backend state
  */
 app.post('/api/lyrics/select', (req, res) => {
   const { track } = req.body;
@@ -337,7 +438,6 @@ app.post('/api/lyrics/select', (req, res) => {
 
 /**
  * GET /api/lyrics/current
- * Retrieve the active song session and timestamps from backend
  */
 app.get('/api/lyrics/current', (req, res) => {
   if (!currentSongSession) {

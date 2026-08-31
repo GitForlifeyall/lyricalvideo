@@ -1,571 +1,444 @@
 // State Management
 const state = {
-  currentQuery: '',
-  searchResults: [],
-  selectedTrack: null,
-  parsedLrcLines: [],
-  currentTab: 'karaoke',
-  karaokeTimer: null,
-  karaokeIndex: 0,
-  isPlayingKaraoke: false,
+  currentEventSource: null,
+  isGenerating: false,
+  activeVideoUrl: null,
+  activeMetadata: null,
+  syncedLines: [],
+  currentLineIndex: -1,
+  currentBackdrop: 'checkerboard',
 };
 
 // DOM Elements
-const searchForm = document.getElementById('search-form');
-const songInput = document.getElementById('song-input');
-const clearBtn = document.getElementById('clear-btn');
-const quickTags = document.querySelectorAll('.tag-btn');
+const generatorForm = document.getElementById('generator-form');
+const songQueryInput = document.getElementById('song-query-input');
+const generateBtn = document.getElementById('generate-btn');
+const btnText = document.getElementById('btn-text');
+const presetChips = document.querySelectorAll('.preset-chip');
 
-const mainLayout = document.getElementById('main-layout');
-const resultsSidebar = document.getElementById('results-sidebar');
-const resultsList = document.getElementById('results-list');
-const resultsCount = document.getElementById('results-count');
+// Pipeline elements
+const pipelineSection = document.getElementById('pipeline-section');
+const pipelineStatusText = document.getElementById('pipeline-status-text');
+const pipelinePercentBadge = document.getElementById('pipeline-percent-badge');
+const progressBarFill = document.getElementById('progress-bar-fill');
 
-const emptyState = document.getElementById('empty-state');
-const loadingState = document.getElementById('loading-state');
-const errorState = document.getElementById('error-state');
-const errorMessage = document.getElementById('error-message');
-const contentView = document.getElementById('content-view');
+const stepAudio = document.getElementById('step-audio');
+const stepAudioDetail = document.getElementById('step-audio-detail');
+const stepAudioStatus = document.getElementById('step-audio-status');
 
-const songTitle = document.getElementById('song-title');
-const songArtist = document.getElementById('song-artist');
-const songAlbum = document.getElementById('song-album');
-const syncedBadge = document.getElementById('synced-badge');
-const durationBadge = document.getElementById('duration-badge');
-const instrumentalBadge = document.getElementById('instrumental-badge');
-const vinylDisk = document.getElementById('vinyl-disk');
+const stepLyrics = document.getElementById('step-lyrics');
+const stepLyricsDetail = document.getElementById('step-lyrics-detail');
+const stepLyricsStatus = document.getElementById('step-lyrics-status');
 
-const tabKaraoke = document.getElementById('tab-karaoke');
-const tabPlain = document.getElementById('tab-plain');
-const tabLrc = document.getElementById('tab-lrc');
-const tabJson = document.getElementById('tab-json');
+const stepAss = document.getElementById('step-ass');
+const stepAssDetail = document.getElementById('step-ass-detail');
+const stepAssStatus = document.getElementById('step-ass-status');
 
-const paneKaraoke = document.getElementById('pane-karaoke');
-const panePlain = document.getElementById('pane-plain');
-const paneLrc = document.getElementById('pane-lrc');
-const paneJson = document.getElementById('pane-json');
+const stepFfmpeg = document.getElementById('step-ffmpeg');
+const stepFfmpegDetail = document.getElementById('step-ffmpeg-detail');
+const stepFfmpegStatus = document.getElementById('step-ffmpeg-status');
 
-const karaokeLinesContainer = document.getElementById('karaoke-lines');
-const plainLyricsText = document.getElementById('plain-lyrics-text');
-const rawLrcText = document.getElementById('raw-lrc-text');
-const jsonTimestampsText = document.getElementById('json-timestamps-text');
+const consoleStream = document.getElementById('console-stream');
+const consoleLineCount = document.getElementById('console-line-count');
 
-const karaokeControls = document.getElementById('karaoke-controls');
-const playBtn = document.getElementById('karaoke-play-btn');
-const playBtnText = document.getElementById('play-btn-text');
-const resetBtn = document.getElementById('karaoke-reset-btn');
+// Studio Stage
+const studioStage = document.getElementById('studio-stage');
+const stageSongTitle = document.getElementById('stage-song-title');
+const stageSongMeta = document.getElementById('stage-song-meta');
+const videoBackdrop = document.getElementById('video-backdrop');
+const outputVideoPlayer = document.getElementById('output-video-player');
+const videoSource = document.getElementById('video-source');
+const backdropBtns = document.querySelectorAll('.backdrop-btn');
 
-const copyBtn = document.getElementById('copy-btn');
-const downloadBtn = document.getElementById('download-btn');
-const saveBackendBtn = document.getElementById('save-backend-btn');
+const dlVideoBtn = document.getElementById('dl-video-btn');
+const dlAssBtn = document.getElementById('dl-ass-btn');
+const dlLrcBtn = document.getElementById('dl-lrc-btn');
+
+const teleprompterStream = document.getElementById('teleprompter-stream');
+const teleprompterCount = document.getElementById('teleprompter-count');
+
+// Gallery
+const videosGalleryGrid = document.getElementById('videos-gallery-grid');
+const refreshGalleryBtn = document.getElementById('refresh-gallery-btn');
+
 const toast = document.getElementById('toast');
 const toastMessage = document.getElementById('toast-message');
+
+let logCount = 0;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
+  loadVideosGallery();
 });
 
 function setupEventListeners() {
-  // Search Form Submit
-  searchForm.addEventListener('submit', (e) => {
+  // Form submission
+  generatorForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    const query = songInput.value.trim();
+    const query = songQueryInput.value.trim();
     if (query) {
-      performSearch(query);
+      startGenerationPipeline(query);
     }
   });
 
-  // Input Clear Button
-  songInput.addEventListener('input', () => {
-    clearBtn.style.display = songInput.value ? 'block' : 'none';
+  // Preset chips
+  presetChips.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      songQueryInput.value = chip.dataset.query;
+      startGenerationPipeline(chip.dataset.query);
+    });
   });
 
-  clearBtn.addEventListener('click', () => {
-    songInput.value = '';
-    clearBtn.style.display = 'none';
-    songInput.focus();
-  });
-
-  // Quick Tags
-  quickTags.forEach((btn) => {
+  // Backdrop Switcher
+  backdropBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
-      const query = btn.dataset.query;
-      songInput.value = query;
-      clearBtn.style.display = 'block';
-      performSearch(query);
+      setBackdrop(btn.dataset.bg);
     });
   });
 
-  // Tab switching
-  [tabKaraoke, tabPlain, tabLrc, tabJson].forEach((btn) => {
-    if (btn) {
-      btn.addEventListener('click', () => {
-        switchTab(btn.dataset.tab);
-      });
-    }
-  });
+  // Refresh Gallery
+  refreshGalleryBtn.addEventListener('click', loadVideosGallery);
 
-  // Save to Backend Button
-  if (saveBackendBtn) {
-    saveBackendBtn.addEventListener('click', handleSaveToBackend);
+  // Video Time Update for Synchronized Teleprompter
+  outputVideoPlayer.addEventListener('timeupdate', () => {
+    syncTeleprompter(outputVideoPlayer.currentTime);
+  });
+}
+
+// 1. Start Server-Sent Events (SSE) Video Generation
+function startGenerationPipeline(query) {
+  if (state.isGenerating && state.currentEventSource) {
+    state.currentEventSource.close();
   }
 
-  // Copy Button
-  copyBtn.addEventListener('click', handleCopy);
+  state.isGenerating = true;
+  generateBtn.disabled = true;
+  btnText.textContent = 'Generating 1080p Overlay...';
+  generateBtn.classList.add('loading');
 
-  // Download Button
-  downloadBtn.addEventListener('click', handleDownload);
+  // Reset & show pipeline UI
+  resetPipelineUI(query);
+  pipelineSection.style.display = 'block';
+  pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Karaoke Simulation
-  playBtn.addEventListener('click', toggleKaraokeSimulation);
-  resetBtn.addEventListener('click', resetKaraokeSimulation);
+  // Connect to SSE Endpoint
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}`;
+  const eventSource = new EventSource(sseUrl);
+  state.currentEventSource = eventSource;
+
+  eventSource.addEventListener('start', (e) => {
+    const data = JSON.parse(e.data);
+    appendConsoleLog(`[START] ${data.message}`);
+  });
+
+  eventSource.addEventListener('progress', (e) => {
+    const data = JSON.parse(e.data);
+    handleProgressUpdate(data);
+  });
+
+  eventSource.addEventListener('log', (e) => {
+    const data = JSON.parse(e.data);
+    appendConsoleLog(data.message);
+  });
+
+  eventSource.addEventListener('complete', (e) => {
+    const data = JSON.parse(e.data);
+    handleGenerationComplete(data);
+    eventSource.close();
+    state.isGenerating = false;
+    generateBtn.disabled = false;
+    btnText.textContent = 'Generate Video Overlay';
+    generateBtn.classList.remove('loading');
+  });
+
+  eventSource.addEventListener('error', (e) => {
+    console.error('SSE Error:', e);
+    appendConsoleLog('[ERROR] Video generation pipeline failed or connection closed.');
+    pipelineStatusText.textContent = 'Generation Failed (Check console output)';
+    eventSource.close();
+    state.isGenerating = false;
+    generateBtn.disabled = false;
+    btnText.textContent = 'Generate Video Overlay';
+    generateBtn.classList.remove('loading');
+    showToast('Generation failed. Please try a different track title.');
+  });
 }
 
-// Perform Search against backend API proxy
-async function performSearch(query) {
-  state.currentQuery = query;
-  stopKaraokeSimulation();
-  showLoading();
+// 2. Handle Progress Updates from Python Generator
+function handleProgressUpdate(data) {
+  const { step, percent, message, details } = data;
 
-  try {
-    const res = await fetch(`/api/lyrics/search?q=${encodeURIComponent(query)}`);
-    if (!res.ok) {
-      throw new Error(`Failed to fetch results (${res.status})`);
-    }
+  // Update progress bar
+  progressBarFill.style.width = `${percent}%`;
+  pipelinePercentBadge.textContent = `${percent}%`;
+  pipelineStatusText.textContent = message;
 
-    const data = await res.json();
+  appendConsoleLog(`[${percent}%] ${message}`);
 
-    if (!Array.isArray(data) || data.length === 0) {
-      showError('No tracks found for "' + query + '". Try refining song/artist name.');
-      return;
-    }
-
-    state.searchResults = data;
-    renderSearchResults(data);
-
-    // Automatically select the first track with synced or plain lyrics
-    const firstValid = data.find((item) => item.hasSyncedLyrics || item.plainLyrics) || data[0];
-    selectTrack(firstValid);
-  } catch (err) {
-    console.error('Search error:', err);
-    showError(err.message || 'Error communicating with LRCLIB API.');
+  // Step-specific updates
+  if (step === 'audio_start') {
+    markStepActive(stepAudio, stepAudioStatus, stepAudioDetail, 'Searching YouTube...');
+  } else if (step === 'audio_done') {
+    markStepDone(stepAudio, stepAudioStatus, stepAudioDetail, `Extracted MP3 (${details.duration || 0}s)`);
+  } else if (step === 'lyrics_start') {
+    markStepActive(stepLyrics, stepLyricsStatus, stepLyricsDetail, 'Querying LRCLIB...');
+  } else if (step === 'lyrics_done') {
+    markStepDone(stepLyrics, stepLyricsStatus, stepLyricsDetail, `${details.track_name} by ${details.artist_name}`);
+  } else if (step === 'ass_start') {
+    markStepActive(stepAss, stepAssStatus, stepAssDetail, 'Styling 1080p canvas...');
+  } else if (step === 'ass_done') {
+    markStepDone(stepAss, stepAssStatus, stepAssDetail, 'Converted to styled .ASS');
+  } else if (step === 'ffmpeg_start' || step === 'ffmpeg_rendering') {
+    markStepActive(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, 'Rendering VP9 yuva420p video...');
+  } else if (step === 'ffmpeg_done' || step === 'completed') {
+    markStepDone(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, '1080p Transparent Overlay Ready!');
   }
 }
 
-// Render Results List in Sidebar
-function renderSearchResults(results) {
-  resultsList.innerHTML = '';
-  resultsSidebar.style.display = 'flex';
-  mainLayout.classList.remove('single-column');
-  resultsCount.textContent = `${results.length} ${results.length === 1 ? 'match' : 'matches'}`;
+// 3. Handle Generation Complete
+function handleGenerationComplete(data) {
+  progressBarFill.style.width = '100%';
+  pipelinePercentBadge.textContent = '100%';
+  pipelineStatusText.textContent = '🎉 Video Overlay Successfully Generated!';
 
-  results.forEach((track) => {
-    const card = document.createElement('div');
-    card.className = 'track-card';
-    card.dataset.id = track.id;
+  state.activeVideoUrl = data.videoUrl;
+  state.activeMetadata = data.metadata;
+  state.syncedLines = data.metadata?.syncedLines || [];
 
-    const hasSynced = !!(track.hasSyncedLyrics || track.syncedLyrics);
-    const hasPlain = !!track.plainLyrics;
+  showToast('1080p Transparent Lyric Video Overlay Generated! 🚀');
 
-    card.innerHTML = `
-      <div class="track-card-title" title="${escapeHtml(track.trackName || track.name)}">
-        ${escapeHtml(track.trackName || track.name)}
-      </div>
-      <div class="track-card-artist" title="${escapeHtml(track.artistName || 'Unknown Artist')}">
-        ${escapeHtml(track.artistName || 'Unknown Artist')}
-      </div>
-      <div class="track-card-meta">
-        <span class="track-card-album">${escapeHtml(track.albumName || '')}</span>
-        <span class="badge ${hasSynced ? 'badge-accent' : 'badge-subtle'}">
-          ${hasSynced ? '⏱️ Synced' : hasPlain ? '📄 Plain' : '🚫 No Lyrics'}
-        </span>
-      </div>
-    `;
+  // Populate Studio Stage
+  stageSongTitle.textContent = data.metadata?.track_name || data.query;
+  stageSongMeta.textContent = `${data.metadata?.artist_name || 'Transparent Overlay'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p 30fps`;
 
-    card.addEventListener('click', () => {
-      selectTrack(track);
-    });
+  // Set Video Player source
+  outputVideoPlayer.pause();
+  videoSource.src = data.videoUrl;
+  outputVideoPlayer.load();
+  outputVideoPlayer.play().catch(() => {});
 
-    resultsList.appendChild(card);
-  });
+  // Setup Download Links
+  dlVideoBtn.href = data.videoUrl;
+  dlVideoBtn.download = data.videoFileName || 'lyric_video_overlay.webm';
+
+  if (data.metadata?.syncedLines) {
+    setupAssetDownloadBlobs(data.metadata);
+  }
+
+  // Populate Teleprompter
+  renderTeleprompter(state.syncedLines);
+
+  studioStage.style.display = 'block';
+  studioStage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Reload Gallery
+  setTimeout(loadVideosGallery, 1000);
 }
 
-// Select and Display Track Details
-async function selectTrack(track) {
-  state.selectedTrack = track;
-  stopKaraokeSimulation();
-
-  // Highlight active card
-  document.querySelectorAll('.track-card').forEach((card) => {
-    card.classList.toggle('active', card.dataset.id === String(track.id));
-  });
-
-  // Metadata Display
-  songTitle.textContent = track.trackName || track.name || 'Unknown Track';
-  songArtist.textContent = track.artistName || 'Unknown Artist';
-  songAlbum.textContent = track.albumName ? `Album: ${track.albumName}` : '';
-
-  // Badges
-  const hasSynced = !!(track.hasSyncedLyrics || track.syncedLyrics);
-  syncedBadge.style.display = hasSynced ? 'inline-flex' : 'none';
-  instrumentalBadge.style.display = track.instrumental ? 'inline-flex' : 'none';
-
-  if (track.duration) {
-    const min = Math.floor(track.duration / 60);
-    const sec = Math.floor(track.duration % 60).toString().padStart(2, '0');
-    durationBadge.textContent = `⏱️ ${min}:${sec}`;
-    durationBadge.style.display = 'inline-flex';
+// 4. Setup Asset Blobs for .ass and .lrc download buttons
+function setupAssetDownloadBlobs(meta) {
+  if (meta.rawLrc) {
+    const lrcBlob = new Blob([meta.rawLrc], { type: 'application/x-subrip' });
+    dlLrcBtn.href = URL.createObjectURL(lrcBlob);
+    dlLrcBtn.download = `${(meta.track_name || 'lyrics').replace(/\s+/g, '_')}.lrc`;
+    dlLrcBtn.style.display = 'inline-flex';
   } else {
-    durationBadge.style.display = 'none';
+    dlLrcBtn.style.display = 'none';
   }
 
-  // Use pre-parsed lines if available from backend, or parse locally
-  state.parsedLrcLines = track.syncedLines || parseLRC(track.syncedLyrics || '');
-
-  // Populate Panes
-  renderKaraokeLines();
-  plainLyricsText.textContent = track.plainLyrics || (track.instrumental ? '[Instrumental - No Lyrics]' : 'No plain lyrics available.');
-  rawLrcText.textContent = track.syncedLyrics || 'No synced LRC timestamps available for this track.';
-
-  // Structured JSON Timestamps representation
-  const jsonPayload = {
-    id: track.id,
-    trackName: track.trackName || track.name,
-    artistName: track.artistName,
-    albumName: track.albumName,
-    durationSeconds: track.duration,
-    hasSyncedLyrics: hasSynced,
-    totalLines: state.parsedLrcLines.length,
-    syncedLines: state.parsedLrcLines,
-    rawLrc: track.syncedLyrics || null
-  };
-  jsonTimestampsText.textContent = JSON.stringify(jsonPayload, null, 2);
-
-  // Sync with Backend active session
-  try {
-    fetch('/api/lyrics/select', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ track })
-    }).catch(err => console.warn('Backend sync notice:', err));
-  } catch (e) {
-    // Non-blocking
+  // ASS download
+  if (meta.syncedLines) {
+    const assContent = generateAssBlobContent(meta);
+    const assBlob = new Blob([assContent], { type: 'text/plain' });
+    dlAssBtn.href = URL.createObjectURL(assBlob);
+    dlAssBtn.download = `${(meta.track_name || 'subtitles').replace(/\s+/g, '_')}.ass`;
+    dlAssBtn.style.display = 'inline-flex';
   }
-
-  // Show/Hide Karaoke Simulation controls based on LRC availability
-  if (state.parsedLrcLines.length > 0) {
-    karaokeControls.style.display = 'flex';
-    tabKaraoke.style.display = 'inline-block';
-    tabLrc.style.display = 'inline-block';
-    tabJson.style.display = 'inline-block';
-    switchTab('karaoke');
-  } else {
-    karaokeControls.style.display = 'none';
-    tabKaraoke.style.display = 'none';
-    switchTab('plain');
-  }
-
-  showContent();
 }
 
-// Parse LRC Timestamp format [mm:ss.xx] into structured objects
-function parseLRC(lrcText) {
-  if (!lrcText) return [];
-  const lines = lrcText.split('\n');
-  const result = [];
-  const timeRegex = /\[(\d{2}):(\d{2})(?:\.(\d{2,3}))?\](.*)/;
-
-  let idx = 0;
-  lines.forEach((line) => {
-    const match = line.match(timeRegex);
-    if (match) {
-      const minutes = parseInt(match[1], 10);
-      const seconds = parseInt(match[2], 10);
-      const millis = match[3] ? (match[3].length === 2 ? parseInt(match[3], 10) * 10 : parseInt(match[3], 10)) : 0;
-      const totalSeconds = parseFloat((minutes * 60 + seconds + millis / 1000).toFixed(3));
-      const totalMs = minutes * 60000 + seconds * 1000 + millis;
-      const text = match[4].trim();
-
-      if (text.length > 0) {
-        result.push({
-          index: idx++,
-          timestamp: `${match[1]}:${match[2]}${match[3] ? '.' + match[3] : ''}`,
-          timeSeconds: totalSeconds,
-          timeMs: totalMs,
-          text: text,
-        });
-      }
-    }
-  });
-
-  return result;
+function generateAssBlobContent(meta) {
+  const header = `[Script Info]\nScriptType: v4.00+\nPlayResX: 1920\nPlayResY: 1080\nWrapStyle: 0\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,3,2,2,30,30,60,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n`;
+  const lines = (meta.syncedLines || []).map(l => `Dialogue: 0,0:${l.timestamp || '00:00'},0:${l.timestamp || '00:04'},Default,,0,0,0,,${l.text}`).join('\n');
+  return header + lines;
 }
 
-// Render Interactive Karaoke Lines
-function renderKaraokeLines() {
-  karaokeLinesContainer.innerHTML = '';
+// 5. Synchronized Teleprompter
+function renderTeleprompter(lines) {
+  teleprompterStream.innerHTML = '';
+  teleprompterCount.textContent = `${lines.length} lines`;
 
-  if (state.parsedLrcLines.length === 0) {
-    karaokeLinesContainer.innerHTML = `
-      <div class="empty-state" style="padding: 2rem 0;">
-        <p>Synced LRC timestamps are not available for this track. Please check the Plain Text tab.</p>
-      </div>
-    `;
+  if (!lines || lines.length === 0) {
+    teleprompterStream.innerHTML = '<div style="padding:1rem; color:var(--text-muted);">No synchronized lines available.</div>';
     return;
   }
 
-  state.parsedLrcLines.forEach((line, idx) => {
+  lines.forEach((line, idx) => {
     const row = document.createElement('div');
-    row.className = 'lyric-line';
+    row.className = 'teleprompter-row';
     row.dataset.index = idx;
+    row.dataset.time = line.timeSeconds;
+
     row.innerHTML = `
-      <span class="lyric-time">${escapeHtml(line.timestamp || line.timeFormatted)}</span>
-      <span class="lyric-text">${escapeHtml(line.text)}</span>
+      <span class="teleprompter-time">${escapeHtml(line.timestamp || '')}</span>
+      <span class="teleprompter-text">${escapeHtml(line.text)}</span>
     `;
 
+    // Click to seek video
     row.addEventListener('click', () => {
-      highlightKaraokeLine(idx);
+      outputVideoPlayer.currentTime = line.timeSeconds;
+      if (outputVideoPlayer.paused) outputVideoPlayer.play();
     });
 
-    karaokeLinesContainer.appendChild(row);
+    teleprompterStream.appendChild(row);
   });
 }
 
-// Highlight a specific line and scroll smoothly into view
-function highlightKaraokeLine(index) {
-  state.karaokeIndex = index;
-  const allLines = karaokeLinesContainer.querySelectorAll('.lyric-line');
+function syncTeleprompter(currentTime) {
+  if (!state.syncedLines || state.syncedLines.length === 0) return;
 
-  allLines.forEach((el, idx) => {
-    el.classList.toggle('active', idx === index);
-  });
-
-  const activeLine = allLines[index];
-  if (activeLine) {
-    activeLine.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }
-}
-
-// Simulate Karaoke Auto-Scroller
-function toggleKaraokeSimulation() {
-  if (state.isPlayingKaraoke) {
-    stopKaraokeSimulation();
-  } else {
-    startKaraokeSimulation();
-  }
-}
-
-function startKaraokeSimulation() {
-  if (state.parsedLrcLines.length === 0) return;
-
-  state.isPlayingKaraoke = true;
-  vinylDisk.classList.add('spinning');
-  playBtnText.textContent = 'Pause';
-  playBtn.classList.add('action-btn-primary');
-
-  highlightKaraokeLine(state.karaokeIndex);
-
-  state.karaokeTimer = setInterval(() => {
-    state.karaokeIndex++;
-    if (state.karaokeIndex >= state.parsedLrcLines.length) {
-      stopKaraokeSimulation();
-      state.karaokeIndex = 0;
-      return;
+  let activeIndex = -1;
+  for (let i = 0; i < state.syncedLines.length; i++) {
+    if (state.syncedLines[i].timeSeconds <= currentTime) {
+      activeIndex = i;
+    } else {
+      break;
     }
-    highlightKaraokeLine(state.karaokeIndex);
-  }, 2500);
-}
-
-function stopKaraokeSimulation() {
-  state.isPlayingKaraoke = false;
-  vinylDisk.classList.remove('spinning');
-  playBtnText.textContent = 'Simulate Play';
-  playBtn.classList.remove('action-btn-primary');
-
-  if (state.karaokeTimer) {
-    clearInterval(state.karaokeTimer);
-    state.karaokeTimer = null;
-  }
-}
-
-function resetKaraokeSimulation() {
-  stopKaraokeSimulation();
-  state.karaokeIndex = 0;
-  highlightKaraokeLine(0);
-}
-
-// Switch Active View Tab
-function switchTab(tabKey) {
-  state.currentTab = tabKey;
-
-  [tabKaraoke, tabPlain, tabLrc, tabJson].forEach((btn) => {
-    if (btn) btn.classList.toggle('active', btn.dataset.tab === tabKey);
-  });
-
-  if (paneKaraoke) paneKaraoke.classList.toggle('active', tabKey === 'karaoke');
-  if (panePlain) panePlain.classList.toggle('active', tabKey === 'plain');
-  if (paneLrc) paneLrc.classList.toggle('active', tabKey === 'lrc');
-  if (paneJson) paneJson.classList.toggle('active', tabKey === 'json');
-}
-
-// Save Time-Synced JSON to Backend Lyrics Folder
-async function handleSaveToBackend() {
-  if (!state.selectedTrack) {
-    showToast('Please select a song first!');
-    return;
   }
 
-  const originalContent = saveBackendBtn.innerHTML;
-  saveBackendBtn.disabled = true;
-  saveBackendBtn.innerHTML = `
-    <span class="spinner" style="width:12px; height:12px; margin:0; border-width:2px; display:inline-block;"></span>
-    <span>Saving...</span>
-  `;
-
-  try {
-    const payload = {
-      track: {
-        ...state.selectedTrack,
-        syncedLines: state.parsedLrcLines
-      }
-    };
-
-    const res = await fetch('/api/lyrics/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+  if (activeIndex !== state.currentLineIndex) {
+    state.currentLineIndex = activeIndex;
+    const allRows = teleprompterStream.querySelectorAll('.teleprompter-row');
+    allRows.forEach((row, idx) => {
+      const isActive = idx === activeIndex;
+      const isPast = idx < activeIndex;
+      row.classList.toggle('active', isActive);
+      row.classList.toggle('past', isPast);
     });
 
+    if (activeIndex >= 0 && allRows[activeIndex]) {
+      allRows[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }
+}
+
+// 6. Backdrop Switcher (Demonstrating Alpha Channel Transparency)
+function setBackdrop(bgType) {
+  state.currentBackdrop = bgType;
+  backdropBtns.forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.bg === bgType);
+  });
+
+  videoBackdrop.className = `video-backdrop backdrop-${bgType}`;
+}
+
+// 7. Load & Render Previously Generated Videos Gallery
+async function loadVideosGallery() {
+  try {
+    const res = await fetch('/api/videos');
     const data = await res.json();
 
-    if (!res.ok) {
-      throw new Error(data.error || 'Failed to save on server');
+    if (!data.videos || data.videos.length === 0) {
+      videosGalleryGrid.innerHTML = `
+        <div class="gallery-empty">
+          <p>No generated video files found yet. Type a song name above to generate your first transparent overlay!</p>
+        </div>
+      `;
+      return;
     }
 
-    showToast(`Saved to ${data.filePath}! (${data.totalLines} lines) 🎉`);
-    saveBackendBtn.innerHTML = `
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="20 6 9 17 4 12"></polyline>
-      </svg>
-      <span>Saved!</span>
-    `;
+    videosGalleryGrid.innerHTML = '';
+    data.videos.forEach((vid) => {
+      const card = document.createElement('div');
+      card.className = 'gallery-card';
 
-    setTimeout(() => {
-      saveBackendBtn.innerHTML = originalContent;
-      saveBackendBtn.disabled = false;
-    }, 2200);
-  } catch (err) {
-    console.error('Save to backend error:', err);
-    showToast(`Error: ${err.message}`);
-    saveBackendBtn.innerHTML = originalContent;
-    saveBackendBtn.disabled = false;
+      const cleanTitle = vid.filename
+        .replace(/\.webm$/, '')
+        .replace(/_[0-9]+$/, '')
+        .replace(/[_-]/g, ' ');
+
+      card.innerHTML = `
+        <div class="gallery-video-thumb backdrop-checkerboard">
+          <video src="${vid.url}" preload="metadata" muted playsinline></video>
+          <div class="play-overlay-icon">▶</div>
+        </div>
+        <div class="gallery-card-body">
+          <strong class="gallery-card-title" title="${escapeHtml(cleanTitle)}">${escapeHtml(cleanTitle)}</strong>
+          <span class="gallery-card-meta">${vid.sizeMb} MB &bull; 1080p VP9 Transparent</span>
+          <div class="gallery-card-actions">
+            <button class="mini-btn play-gallery-btn">Preview</button>
+            <a href="${vid.url}" download="${vid.filename}" class="mini-btn" target="_blank">Download</a>
+          </div>
+        </div>
+      `;
+
+      card.querySelector('.play-gallery-btn').addEventListener('click', () => {
+        outputVideoPlayer.pause();
+        videoSource.src = vid.url;
+        outputVideoPlayer.load();
+        outputVideoPlayer.play().catch(() => {});
+        stageSongTitle.textContent = cleanTitle;
+        stageSongMeta.textContent = `${vid.sizeMb} MB &bull; 1080p 30fps Transparent Overlay`;
+        studioStage.style.display = 'block';
+        studioStage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+
+      videosGalleryGrid.appendChild(card);
+    });
+  } catch (e) {
+    console.warn('Could not load videos gallery:', e);
   }
 }
 
-// Copy to Clipboard
-function handleCopy() {
-  if (!state.selectedTrack) return;
+// UI Helpers
+function resetPipelineUI(query) {
+  progressBarFill.style.width = '5%';
+  pipelinePercentBadge.textContent = '0%';
+  pipelineStatusText.textContent = `Starting pipeline for "${query}"...`;
+  consoleStream.innerHTML = '';
+  logCount = 0;
+  consoleLineCount.textContent = '0 lines';
 
-  let textToCopy = '';
-  if (state.currentTab === 'json') {
-    textToCopy = jsonTimestampsText.textContent;
-  } else if (state.currentTab === 'lrc' && state.selectedTrack.syncedLyrics) {
-    textToCopy = state.selectedTrack.syncedLyrics;
-  } else {
-    textToCopy = state.selectedTrack.plainLyrics || state.selectedTrack.syncedLyrics || '';
-  }
-
-  if (!textToCopy) {
-    showToast('No lyrics text to copy!');
-    return;
-  }
-
-  navigator.clipboard.writeText(textToCopy)
-    .then(() => showToast('Copied to clipboard! 🎉'))
-    .catch(() => showToast('Failed to copy.'));
+  resetStep(stepAudio, stepAudioStatus, stepAudioDetail, 'Waiting to start...');
+  resetStep(stepLyrics, stepLyricsStatus, stepLyricsDetail, 'Waiting to start...');
+  resetStep(stepAss, stepAssStatus, stepAssDetail, 'Waiting...');
+  resetStep(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, 'Waiting...');
 }
 
-// Download File (.lrc, .json, or .txt)
-function handleDownload() {
-  if (!state.selectedTrack) return;
-
-  const track = state.selectedTrack;
-  const isJson = state.currentTab === 'json';
-  const isLrc = state.currentTab === 'lrc' || (track.syncedLyrics && state.currentTab === 'karaoke');
-
-  let content = '';
-  let extension = 'txt';
-  let mimeType = 'text/plain';
-
-  if (isJson) {
-    content = jsonTimestampsText.textContent;
-    extension = 'json';
-    mimeType = 'application/json';
-  } else if (isLrc && track.syncedLyrics) {
-    content = track.syncedLyrics;
-    extension = 'lrc';
-    mimeType = 'application/x-subrip';
-  } else {
-    content = track.plainLyrics || track.syncedLyrics || '';
-    extension = 'txt';
-  }
-
-  if (!content) {
-    showToast('No content to download!');
-    return;
-  }
-
-  const safeTitle = (track.trackName || 'lyrics').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const safeArtist = (track.artistName || 'artist').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const filename = `${safeArtist}-${safeTitle}.${extension}`;
-
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-
-  showToast(`Downloaded ${filename} 🚀`);
+function resetStep(card, status, detail, text) {
+  card.className = 'step-card';
+  status.textContent = '⏳';
+  detail.textContent = text;
 }
 
-// Toast notification trigger
-function showToast(message) {
-  toastMessage.textContent = message;
+function markStepActive(card, status, detail, text) {
+  card.className = 'step-card active';
+  status.innerHTML = '<span class="spinner" style="width:14px; height:14px; margin:0; border-width:2px; display:inline-block;"></span>';
+  detail.textContent = text;
+}
+
+function markStepDone(card, status, detail, text) {
+  card.className = 'step-card done';
+  status.textContent = '✅';
+  detail.textContent = text;
+}
+
+function appendConsoleLog(msg) {
+  logCount++;
+  consoleLineCount.textContent = `${logCount} lines`;
+  const line = document.createElement('div');
+  line.className = 'console-line';
+  line.textContent = `> ${msg}`;
+  consoleStream.appendChild(line);
+  consoleStream.scrollTop = consoleStream.scrollHeight;
+}
+
+function showToast(msg) {
+  toastMessage.textContent = msg;
   toast.classList.add('show');
-  setTimeout(() => {
-    toast.classList.remove('show');
-  }, 2600);
+  setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
-// UI State Toggles
-function showLoading() {
-  emptyState.style.display = 'none';
-  errorState.style.display = 'none';
-  contentView.style.display = 'none';
-  loadingState.style.display = 'flex';
-}
-
-function showError(msg) {
-  loadingState.style.display = 'none';
-  contentView.style.display = 'none';
-  emptyState.style.display = 'none';
-  errorMessage.textContent = msg;
-  errorState.style.display = 'flex';
-}
-
-function showContent() {
-  emptyState.style.display = 'none';
-  loadingState.style.display = 'none';
-  errorState.style.display = 'none';
-  contentView.style.display = 'flex';
-}
-
-// Utility: HTML Sanitizer
 function escapeHtml(str) {
   if (!str) return '';
   return String(str)

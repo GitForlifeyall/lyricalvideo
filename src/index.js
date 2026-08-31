@@ -164,12 +164,15 @@ app.get('/api/lyrics/search', async (req, res) => {
 
     const data = await response.json();
     
-    // Attach parsed syncedLines to each item for convenience
-    const formattedData = Array.isArray(data) ? data.map(item => ({
-      ...item,
-      syncedLines: parseLrcTimestamps(item.syncedLyrics || ''),
-      hasSyncedLyrics: !!item.syncedLyrics
-    })) : data;
+    // Attach parsed syncedLines and sort tracks with synced lyrics first
+    const formattedData = Array.isArray(data) ? data
+      .map(item => ({
+        ...item,
+        syncedLines: parseLrcTimestamps(item.syncedLyrics || ''),
+        hasSyncedLyrics: !!(item.syncedLyrics && item.syncedLyrics.trim().length > 0)
+      }))
+      .sort((a, b) => (b.hasSyncedLyrics === a.hasSyncedLyrics ? 0 : b.hasSyncedLyrics ? 1 : -1))
+      : data;
 
     return res.json(formattedData);
   } catch (error) {

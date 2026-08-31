@@ -1,2 +1,4 @@
 requests>=2.31.0
 yt-dlp>=2024.0.0
+lyricsgenius>=3.12.2
+beautifulsoup4>=4.12.3

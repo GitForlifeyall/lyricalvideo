@@ -189,6 +189,86 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
     return deduped
 
 
+GENIUS_API_KEY = os.environ.get("GENIUS_API_KEY", "ypkO8jfBDy2rrh0H_LUff5Adg2XIRrHx5GA3K73ENrTGdG2V8_I4WxIWjDp8bps8")
+
+
+def clean_genius_lyrics_text(raw: str) -> List[str]:
+    """Clean genius lyrics annotations and embedded metadata."""
+    lines = []
+    for line in raw.splitlines():
+        line = re.sub(r'^\d+Embed$', '', line)
+        line = re.sub(r'Embed$', '', line)
+        line = re.sub(r'\[.*?\]', '', line)
+        line = re.sub(r'\(.*?\)', '', line)
+        line = line.strip()
+        if line and len(line) > 1:
+            lines.append(line)
+    return lines
+
+
+def fetch_genius_lyrics_fallback(
+    song_title: str,
+    artist_name: str = "",
+    duration: float = 180.0
+) -> Tuple[List[Tuple[float, float, str]], str]:
+    """
+    Fallback lyrics retriever using the Genius API when YouTube has no captions or for non-English songs.
+    """
+    try:
+        import lyricsgenius
+    except ImportError:
+        return [], "none"
+
+    if not GENIUS_API_KEY:
+        return [], "none"
+
+    emit_progress("genius_fallback", 45, f"Querying Genius API for '{song_title}' lyrics...")
+
+    # Clean title to maximize Genius hit rate
+    clean_q = re.sub(r'\(.*?\)|\[.*?\]|official|music|video|audio|lyrics|latest|punjabi|hindi|songs|remix|hd|4k|\d{4}', '', song_title, flags=re.I).strip()
+    clean_q = re.sub(r'[\|\-_]', ' ', clean_q).strip()
+
+    try:
+        genius = lyricsgenius.Genius(GENIUS_API_KEY)
+        genius.verbose = False
+        genius.remove_section_headers = True
+
+        song = None
+        if artist_name and artist_name != "YouTube":
+            clean_artist = re.sub(r'VEVO|Official|Topic|\(.*?\)', '', artist_name, flags=re.I).strip()
+            song = genius.search_song(clean_q, clean_artist)
+
+        if not song:
+            song = genius.search_song(clean_q)
+
+        if not song and song_title != clean_q:
+            song = genius.search_song(song_title)
+
+        if song and song.lyrics:
+            lines = clean_genius_lyrics_text(song.lyrics)
+            if lines:
+                print(f"[Genius] Found {len(lines)} lines for '{song.title}' by '{song.artist}'")
+                
+                # Distribute lines across track duration
+                intro_lead = 5.0
+                outro_lead = 4.0
+                usable_time = max(10.0, (duration or 180.0) - intro_lead - outro_lead)
+                step = usable_time / len(lines)
+
+                cues = []
+                for i, text in enumerate(lines):
+                    t_start = intro_lead + (i * step)
+                    dur = min(step * 0.95, 4.5)
+                    t_end = t_start + max(1.5, dur)
+                    cues.append((round(t_start, 2), round(t_end, 2), text))
+
+                return cues, "genius"
+    except Exception as e:
+        print(f"[Genius Fallback Warning] {e}")
+
+    return [], "none"
+
+
 # Cache detected encoder
 _CACHED_ENCODER = None
 
@@ -288,7 +368,15 @@ def download_youtube_audio(
 
     cues, matched_lang = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
-    emit_progress("ytdlp_done", 55, f"Audio & captions ready: '{title}' ({len(cues)} lines, lang: {matched_lang})", {
+    # Genius API Fallback for songs without subtitles or non-English tracks
+    if not cues:
+        emit_progress("genius_fallback", 50, f"No native YouTube captions. Fetching verified lyrics from Genius API...")
+        genius_cues, genius_lang = fetch_genius_lyrics_fallback(title, uploader, duration)
+        if genius_cues:
+            cues = genius_cues
+            matched_lang = genius_lang
+
+    emit_progress("ytdlp_done", 55, f"Audio & lyrics ready: '{title}' ({len(cues)} lines, source: {matched_lang})", {
         "title": title,
         "duration": duration,
         "uploader": uploader,

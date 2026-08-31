@@ -562,15 +562,49 @@ Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{o
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
+    # Flatten and sanitize cues into strictly 1 line per cue
+    single_line_cues: List[Tuple[float, float, str]] = []
+    for s_t, e_t, raw_t in cues:
+        # Split on any newline so each sentence is its own line
+        sub_lines = [l.strip() for l in raw_t.replace("\r", "\n").replace("\\N", "\n").split("\n") if l.strip()]
+        if not sub_lines:
+            continue
+        if len(sub_lines) == 1:
+            clean_l = " ".join(sub_lines[0].split())
+            if clean_l:
+                single_line_cues.append((s_t, e_t, clean_l))
+        else:
+            # Distribute multi-line cue into equal sub-segments
+            total_dur = max(1.5, e_t - s_t)
+            sub_step = total_dur / len(sub_lines)
+            for j, sub_l in enumerate(sub_lines):
+                clean_l = " ".join(sub_l.split())
+                if clean_l:
+                    sub_start = s_t + (j * sub_step)
+                    sub_end = sub_start + sub_step
+                    single_line_cues.append((sub_start, sub_end, clean_l))
+
+    # Sort cues by start timestamp
+    single_line_cues.sort(key=lambda x: x[0])
+
     dialogues = []
     structured_lines = []
     raw_lrc_lines = []
 
-    for i, (start_sec, end_sec, text) in enumerate(cues):
+    for i in range(len(single_line_cues)):
+        start_sec, end_sec, text = single_line_cues[i]
         adjusted_start = max(0.0, start_sec + offset_seconds)
-        adjusted_end = max(adjusted_start + 1.0, end_sec + offset_seconds)
+        adjusted_end = max(adjusted_start + 0.6, end_sec + offset_seconds)
 
-        clean_text = text.replace("{", "\\{").replace("}", "\\}")
+        # STRICT 1-LINE ENFORCEMENT: Clamp end time to never exceed the next line's start time!
+        if i < len(single_line_cues) - 1:
+            next_start = max(0.0, single_line_cues[i + 1][0] + offset_seconds)
+            if next_start > adjusted_start:
+                adjusted_end = min(adjusted_end, next_start)
+            else:
+                adjusted_end = adjusted_start + 0.8
+
+        clean_text = text.replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\\N", " ").strip()
         dialogue_text = f"{pos_override_tag}{clean_text}" if pos_override_tag else clean_text
         dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
@@ -580,15 +614,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             "timestamp": ts_formatted,
             "timeSeconds": adjusted_start,
             "endSeconds": adjusted_end,
-            "text": text
+            "text": clean_text
         })
-        raw_lrc_lines.append(f"[{ts_formatted}] {text}")
+        raw_lrc_lines.append(f"[{ts_formatted}] {clean_text}")
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogues) + "\n")
 
     raw_lrc = "\n".join(raw_lrc_lines)
-    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} events, {res_x}x{res_y}, {place_mode}).")
+    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} strictly single-line events, {res_x}x{res_y}, {place_mode}).")
     return output_ass_path, structured_lines, raw_lrc
 
 

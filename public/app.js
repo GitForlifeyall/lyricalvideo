@@ -1171,8 +1171,9 @@ function escapeHtml(str) {
 
 // 8. Option 1: Record Exact In-Browser Canvas Video (100% WYSIWYG Pixel Capture)
 async function recordExactBrowserCanvasVideo() {
-  if (!outputVideoPlayer || !outputVideoPlayer.src) {
-    showToast('Please generate a lyric video first!');
+  const videoUrl = state.activeVideoUrl || (videoSource ? videoSource.src : '') || (outputVideoPlayer ? (outputVideoPlayer.currentSrc || outputVideoPlayer.src) : '');
+  if (!outputVideoPlayer || !videoUrl) {
+    showToast('Please generate a lyric video first using the input above!');
     return;
   }
 
@@ -1187,6 +1188,10 @@ async function recordExactBrowserCanvasVideo() {
     showToast('🎥 Recording 100% exact browser pixels with live CSS blur & layout...');
 
     const video = outputVideoPlayer;
+    if (!video.src && videoUrl) {
+      video.src = videoUrl;
+    }
+
     const canvasW = 1080;
     const canvasH = 1920;
 
@@ -1201,16 +1206,26 @@ async function recordExactBrowserCanvasVideo() {
     // Audio stream from video element
     let combinedStream = canvasStream;
     try {
-      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-      const source = audioCtx.createMediaElementSource(video);
-      const dest = audioCtx.createMediaStreamDestination();
-      source.connect(dest);
-      source.connect(audioCtx.destination);
-      combinedStream = new MediaStream([
-        ...canvasStream.getVideoTracks(),
-        ...dest.stream.getAudioTracks()
-      ]);
+      if (!window._appAudioCtx) {
+        window._appAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (window._appAudioCtx.state === 'suspended') {
+        await window._appAudioCtx.resume();
+      }
+      if (!window._appAudioSource && video) {
+        window._appAudioSource = window._appAudioCtx.createMediaElementSource(video);
+      }
+      if (window._appAudioSource) {
+        const dest = window._appAudioCtx.createMediaStreamDestination();
+        window._appAudioSource.connect(dest);
+        window._appAudioSource.connect(window._appAudioCtx.destination);
+        combinedStream = new MediaStream([
+          ...canvasStream.getVideoTracks(),
+          ...dest.stream.getAudioTracks()
+        ]);
+      }
     } catch (e) {
+      console.warn("AudioContext stream capture note:", e);
       combinedStream = canvasStream;
     }
 

@@ -441,7 +441,7 @@ function setupEventListeners() {
       e.preventDefault();
       if (state.isBurning) return;
 
-      const originalText = dlVideoBtn.querySelector('span') ? dlVideoBtn.querySelector('span').textContent : 'Fast Burned MP4 Export';
+      const originalText = dlVideoBtn.querySelector('span') ? dlVideoBtn.querySelector('span').textContent : 'Instant 1080p MP4 Download (~1-2s)';
       try {
         state.isBurning = true;
         if (dlVideoBtn.querySelector('span')) dlVideoBtn.querySelector('span').textContent = '⚡ Burning layer into 1080p MP4...';

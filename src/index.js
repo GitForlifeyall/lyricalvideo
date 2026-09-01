@@ -118,6 +118,8 @@ app.get('/api/generate-video-stream', (req, res) => {
   const blur = req.query.blur || '';
   const spacing = req.query.spacing || '';
 
+  const burnText = req.query.burn_text === 'true';
+
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonArgs = [
     pythonScript,
@@ -132,6 +134,9 @@ app.get('/api/generate-video-stream', (req, res) => {
     `--brat-theme=${bratTheme}`,
     '--json-progress'
   ];
+  if (!burnText) {
+    pythonArgs.push('--clean-base');
+  }
   if (font) {
     pythonArgs.push(`--font=${font}`);
   }

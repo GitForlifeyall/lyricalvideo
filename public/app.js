@@ -392,15 +392,28 @@ function setupEventListeners() {
     });
   }
 
-  // Stage Re-render Button
+  // Stage Re-render Button (Burns live top layer to 1080p MP4)
   if (stageRerenderBtn) {
     stageRerenderBtn.addEventListener('click', (e) => {
       e.preventDefault();
       if (state.isGenerating) return;
       const query = state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : '');
       if (query) {
-        showToast(`Re-rendering with X:${state.xpos}%, Y:${state.ypos}%, Size:${state.fontSize}px, Blur:${state.blur}px, Spacing:${state.spacing}px... ⚡`);
-        startGenerationPipeline(query);
+        showToast(`Burning custom layer: X:${state.xpos}%, Y:${state.ypos}%, Size:${state.fontSize}px, Blur:${state.blur}px, Spacing:${state.spacing}px... ⚡`);
+        startGenerationPipeline(query, true);
+      }
+    });
+  }
+
+  // Download Button (Burns live top layer into MP4 if not already burned)
+  if (dlVideoBtn) {
+    dlVideoBtn.addEventListener('click', (e) => {
+      if (!state.isBurned) {
+        e.preventDefault();
+        state.pendingDownload = true;
+        showToast('Burning your custom top-layer into 1080p MP4 for download... ⚡');
+        const query = state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : '');
+        startGenerationPipeline(query, true);
       }
     });
   }
@@ -642,7 +655,8 @@ function syncStagePlacementUI() {
 }
 
 // 1. Start Server-Sent Events (SSE) Video Generation
-function startGenerationPipeline(query) {
+// 1. Start Server-Sent Events (SSE) Video Generation
+function startGenerationPipeline(query, burnText = false) {
   state.lastQuery = query;
   if (state.isGenerating && state.currentEventSource) {
     state.currentEventSource.close();
@@ -651,7 +665,7 @@ function startGenerationPipeline(query) {
   state.isGenerating = true;
   generateBtn.disabled = true;
   if (stageRerenderBtn) stageRerenderBtn.disabled = true;
-  btnText.textContent = 'Generating 1080p MP4...';
+  btnText.textContent = burnText ? 'Burning Top Layer to 1080p MP4...' : 'Generating 1080p Base MP4...';
   generateBtn.classList.add('loading');
 
   // Reset & show pipeline UI
@@ -659,8 +673,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, language, placement, ypos, xpos, and brat_theme parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}`;
+  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, language, placement, ypos, xpos, brat_theme, and burn_text
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -682,7 +696,7 @@ function startGenerationPipeline(query) {
   eventSource.addEventListener('complete', (e) => {
     try {
       const data = JSON.parse(e.data);
-      handleGenerationComplete(data);
+      handleGenerationComplete(data, burnText);
     } finally {
       eventSource.close();
       state.currentEventSource = null;
@@ -742,23 +756,26 @@ function handleProgressUpdate(data) {
   } else if (step === 'ass_done') {
     markStepDone(stepAss, stepAssStatus, stepAssDetail, 'Generated styled 1080p ASS');
   } else if (step === 'ffmpeg_start' || step === 'ffmpeg_rendering') {
-    markStepActive(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, 'Rendering VP9 yuva420p video...');
+    markStepActive(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, 'Rendering 1080p video...');
   } else if (step === 'ffmpeg_done' || step === 'completed') {
-    markStepDone(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, '1080p Transparent Overlay Ready!');
+    markStepDone(stepFfmpeg, stepFfmpegStatus, stepFfmpegDetail, '1080p MP4 Ready!');
   }
 }
 
 // 3. Handle Generation Complete
-function handleGenerationComplete(data) {
+function handleGenerationComplete(data, isBurned = false) {
   progressBarFill.style.width = '100%';
   pipelinePercentBadge.textContent = '100%';
-  pipelineStatusText.textContent = '🎉 Video Overlay Successfully Generated!';
+  pipelineStatusText.textContent = isBurned
+    ? '🎉 Burned 1080p Video Ready for Download!'
+    : '🎉 Clean Base Video & Live Text Layer Ready!';
 
   state.activeVideoUrl = data.videoUrl;
   state.activeMetadata = data.metadata;
   state.syncedLines = data.metadata?.syncedLines || [];
+  state.isBurned = isBurned;
 
-  showToast('1080p MP4 Lyric Video Generated! 🚀');
+  showToast(isBurned ? 'Burned 1080p MP4 Ready! 🚀' : 'Clean Base Video Ready! Tune Live Layer ⚡');
 
   const isPortrait = (data.metadata?.aspect_ratio || 'portrait') === 'portrait';
   const tplUsed = (data.metadata?.template || state.template || 'template1').replace('template', 'Template ');
@@ -774,7 +791,6 @@ function handleGenerationComplete(data) {
 
   // Set Video Player source
   try {
-    if (stageLiveSubtitleOverlay) stageLiveSubtitleOverlay.style.display = 'none';
     outputVideoPlayer.pause();
     if (videoSource) videoSource.src = data.videoUrl;
     outputVideoPlayer.load();
@@ -785,6 +801,12 @@ function handleGenerationComplete(data) {
   } catch (err) {
     console.warn("Video player initialization note:", err);
   }
+
+  // Ensure real-time interactive text overlay is visible over the clean base video
+  if (stageLiveSubtitleOverlay) {
+    stageLiveSubtitleOverlay.style.display = state.overlayEnabled ? 'flex' : 'none';
+  }
+  applyRealtimePlacementAndSize(false);
 
   // Setup Download Links
   dlVideoBtn.href = data.videoUrl;
@@ -799,6 +821,17 @@ function handleGenerationComplete(data) {
 
   studioStage.style.display = 'block';
   studioStage.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Auto-download if this was a burn request triggered by download
+  if (isBurned && state.pendingDownload) {
+    state.pendingDownload = false;
+    const a = document.createElement('a');
+    a.href = data.videoUrl;
+    a.download = data.videoFileName || 'lyric_video_burned.mp4';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
 
   // Reload Gallery
   setTimeout(loadVideosGallery, 1000);

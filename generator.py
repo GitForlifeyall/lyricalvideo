@@ -870,9 +870,10 @@ def render_lyric_video_ffmpeg(
     aspect_ratio: str = "portrait",
     bg_color: str = "black",
     is_brat: bool = False,
-    blur_amount: Optional[float] = None
+    blur_amount: Optional[float] = None,
+    clean_base: bool = False
 ) -> str:
-    """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video with GPU Acceleration."""
+    """Step 3: Run FFmpeg to render clean base or ASS burned subtitles over MP4 video."""
     if not duration or duration <= 0:
         duration = get_audio_duration(audio_path)
 
@@ -882,7 +883,8 @@ def render_lyric_video_ffmpeg(
     res_h = 1920 if is_portrait else 1080
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
-    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video using {encoder_name} (BG: {bg_color}, {duration:.1f}s)...")
+    mode_desc = "Clean Base Video" if clean_base else "Burned Subtitles Video"
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 {mode_desc} using {encoder_name} (BG: {bg_color}, {duration:.1f}s)...")
     
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
@@ -896,21 +898,37 @@ def render_lyric_video_ffmpeg(
     else:
         vf_filter = f"ass={normalized_ass}"
 
-    ffmpeg_cmd = [
-        "ffmpeg", "-y",
-        "-threads", "0",
-        "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_str}:r=30:d={duration:.2f}",
-        "-i", audio_path,
-        "-vf", vf_filter,
-        "-c:v", encoder_name,
-    ] + encoder_flags + [
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "192k",
-        "-movflags", "+faststart",
-        "-shortest",
-        output_path
-    ]
+    if clean_base:
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-threads", "0",
+            "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_str}:r=30:d={duration:.2f}",
+            "-i", audio_path,
+            "-c:v", encoder_name,
+        ] + encoder_flags + [
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-shortest",
+            output_path
+        ]
+    else:
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-threads", "0",
+            "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_str}:r=30:d={duration:.2f}",
+            "-i", audio_path,
+            "-vf", vf_filter,
+            "-c:v", encoder_name,
+        ] + encoder_flags + [
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            "-shortest",
+            output_path
+        ]
 
     emit_progress("ffmpeg_rendering", 85, f"Step 3: Hardware encoding {res_str} video with {encoder_name}...")
     subprocess.run(ffmpeg_cmd, check=True)
@@ -934,7 +952,8 @@ def generate_lyric_video(
     x_percent: Optional[float] = 50.0,
     brat_theme: str = "green",
     blur_amount: Optional[float] = None,
-    spacing: Optional[int] = None
+    spacing: Optional[int] = None,
+    clean_base: bool = False
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
@@ -986,7 +1005,8 @@ def generate_lyric_video(
         aspect_ratio=effective_aspect,
         bg_color=bg_color,
         is_brat=is_brat,
-        blur_amount=blur_amount
+        blur_amount=blur_amount,
+        clean_base=clean_base
     )
 
     final_result = {
@@ -1008,6 +1028,7 @@ def generate_lyric_video(
         "x_percent": x_percent,
         "blur_amount": blur_amount,
         "spacing": spacing,
+        "clean_base": clean_base,
         "language": yt_data.get("matched_lang", lang),
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
@@ -1035,6 +1056,7 @@ if __name__ == "__main__":
     blur = 3.6
     spacing = None
     brat_theme = "green"
+    clean_base = False
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -1079,6 +1101,8 @@ if __name__ == "__main__":
                 pass
         elif a.startswith("--brat-theme="):
             brat_theme = a.split("=")[1].strip()
+        elif a == "--clean-base" or a.startswith("--clean-base"):
+            clean_base = True
 
     res = generate_lyric_video(
         song_query=query,
@@ -1094,7 +1118,8 @@ if __name__ == "__main__":
         x_percent=xpos,
         brat_theme=brat_theme,
         blur_amount=blur,
-        spacing=spacing
+        spacing=spacing,
+        clean_base=clean_base
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

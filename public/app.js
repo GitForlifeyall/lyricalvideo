@@ -1362,6 +1362,12 @@ async function recordExactBrowserCanvasVideo() {
         ctx.restore();
       }
 
+      // Check if video reached end
+      if (video.duration && video.currentTime >= (video.duration - 0.15)) {
+        finishRecording();
+        return;
+      }
+
       // Update progress percent
       if (btn && video.duration) {
         const pct = Math.min(100, Math.round((video.currentTime / video.duration) * 100));
@@ -1374,6 +1380,7 @@ async function recordExactBrowserCanvasVideo() {
 
     // Start 8x Accelerated Recording (Captures entire video in ~8-10 seconds!)
     const speedMultiplier = 8.0;
+    video.loop = false;
     video.playbackRate = speedMultiplier;
     video.muted = true;
     recorder.start(40);
@@ -1381,14 +1388,25 @@ async function recordExactBrowserCanvasVideo() {
     await video.play();
     drawFrame();
 
-    video.onended = async () => {
+    let finished = false;
+    async function finishRecording() {
+      if (finished) return;
+      finished = true;
       isRecording = false;
+      video.pause();
       video.playbackRate = 1.0;
       video.muted = false;
-      recorder.stop();
+      video.loop = true;
+
       if (btn) {
-        btn.innerHTML = '<span class="spinner-inline"></span> <span>Merging 1x Speed & Audio into MP4...</span>';
+        btn.innerHTML = '<span class="spinner-inline"></span> <span>Merging 1x Speed & Audio into 1080p MP4...</span>';
       }
+
+      try {
+        if (recorder.state !== 'inactive') {
+          recorder.stop();
+        }
+      } catch (e) {}
 
       recorder.onstop = async () => {
         const recordedBlob = new Blob(chunks, { type: mimeType });
@@ -1410,10 +1428,10 @@ async function recordExactBrowserCanvasVideo() {
             a.click();
             document.body.removeChild(a);
           } else {
-            throw new Error('No video URL');
+            throw new Error('No video URL returned from remux');
           }
         } catch (e) {
-          // Fallback direct WebM download
+          console.warn('Remux note:', e);
           const url = URL.createObjectURL(recordedBlob);
           const a = document.createElement('a');
           a.href = url;
@@ -1429,7 +1447,9 @@ async function recordExactBrowserCanvasVideo() {
           }
         }
       };
-    };
+    }
+
+    video.onended = () => finishRecording();
   } catch (err) {
     console.error('Recording error:', err);
     showToast('Failed to record exact canvas video: ' + err.message);

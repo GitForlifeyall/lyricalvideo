@@ -8,12 +8,29 @@ import os
 import re
 import sys
 import json
+import textwrap
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 import requests
 import yt_dlp
+
+
+def format_brat_multiline(text: str, max_chars_per_line: int = 15) -> str:
+    """
+    Wraps single-line text into multi-line Brat block using ASS line breaks (\\N).
+    """
+    text_clean = text.lower().strip()
+    if not text_clean:
+        return ""
+    wrapped_lines = textwrap.wrap(
+        text_clean,
+        width=max_chars_per_line,
+        break_long_words=False,
+        replace_whitespace=True
+    )
+    return r"\N".join(wrapped_lines)
 
 # Check if JSON progress mode is enabled
 JSON_MODE = "--json-progress" in sys.argv
@@ -458,6 +475,22 @@ BRAT_THEMES = {
         "text_color": "&H00FFFFFF",
         "hex_bg": "#000000",
         "hex_text": "#FFFFFF",
+    },
+    "blue": {
+        "name": "SWEAT Tour (Blue/Red)",
+        "bg_color": "0x0A00AD",
+        "text_color": "&H000001DE",
+        "hex_bg": "#0A00AD",
+        "hex_text": "#DE0100",
+        "font_name": "Impact",
+    },
+    "strike": {
+        "name": "Brat Strike",
+        "bg_color": "0x8ACE00",
+        "text_color": "&H00000000",
+        "hex_bg": "#8ACE00",
+        "hex_text": "#000000",
+        "strikeout": 1,
     }
 }
 
@@ -522,18 +555,54 @@ TEMPLATES = {
         "name": "Template 4 (Brat Minimal)",
         "aspect_ratio": "portrait",
         "font_name": "Arial Narrow",
-        "font_size": 86,
+        "font_size": 72,
         "primary_color": "&H00000000",
         "outline_color": "&H00000000",
         "back_color": "&H00000000",
-        "bold": -1,
+        "bold": 0,
         "outline_width": 0,
         "shadow_depth": 0,
-        "margin_v": 0,
+        "margin_v": 80,
         "bg_color": "0x8ACE00",
-        "scale_x": 90,
-        "blur": 1.4,
+        "scale_x": 68,
+        "blur": 1.5,
+        "spacing": -1,
         "force_lowercase": True,
+    },
+    "template_4_brat": {
+        "id": "template_4_brat",
+        "name": "Template 4 (Brat Minimal)",
+        "aspect_ratio": "portrait",
+        "font_name": "Arial Narrow",
+        "font_size": 72,
+        "primary_color": "&H00000000",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": 0,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 80,
+        "bg_color": "0x8ACE00",
+        "scale_x": 68,
+        "blur": 1.5,
+        "spacing": -1,
+        "force_lowercase": True,
+    },
+    "brat": {
+        "id": "brat",
+        "name": "Brat Minimal (Charli XCX)",
+        "aspect_ratio": "portrait",
+        "font_name": "Arial Narrow",
+        "font_size": 72,
+        "primary_color": "&H00000000",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": 0,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 80,
+        "bg_color": "0x8ACE00",
+        "scale_x": 68,
     }
 }
 
@@ -549,14 +618,17 @@ def build_ass_and_lrc_content(
     template_key: Optional[str] = "template1",
     placement: str = "center",
     y_percent: Optional[float] = 50.0,
-    brat_theme: str = "green"
+    x_percent: Optional[float] = 50.0,
+    brat_theme: str = "green",
+    blur_amount: Optional[float] = None,
+    spacing: Optional[int] = None
 ) -> Tuple[str, List[Dict[str, Any]], str]:
     """
     Convert cues into ASS subtitle format configured with Template presets (1, 2, 3, 4 Brat),
     custom typography, dynamic reflow, and interactive dynamic placement (Center default).
     """
     tpl_id = (template_key or "").lower().strip()
-    if tpl_id in ["template4", "brat", "template_brat", "template4_brat"]:
+    if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
     else:
@@ -583,38 +655,47 @@ def build_ass_and_lrc_content(
     if is_portrait:
         res_x = 1080
         res_y = 1920
-        margin_l = 80
-        margin_r = 80
-        outline_width = tpl.get("outline_width", 4)
-        shadow_depth = tpl.get("shadow_depth", 3)
+        margin_l = 180 if is_brat else 40
+        margin_r = 180 if is_brat else 40
+        outline_width = 0 if is_brat else tpl.get("outline_width", 4)
+        shadow_depth = 0 if is_brat else tpl.get("shadow_depth", 3)
     else:
         res_x = 1920
         res_y = 1080
-        margin_l = 60
-        margin_r = 60
-        outline_width = tpl.get("outline_width", 3)
-        shadow_depth = tpl.get("shadow_depth", 2)
+        margin_l = 240 if is_brat else 60
+        margin_r = 240 if is_brat else 60
+        outline_width = 0 if is_brat else tpl.get("outline_width", 3)
+        shadow_depth = 0 if is_brat else tpl.get("shadow_depth", 2)
 
     # Dynamic Placement configuration (Default: Center)
     place_mode = (placement or "center").lower().strip()
+    x_pos_val = float(x_percent) if x_percent is not None else 50.0
     y_pos_val = float(y_percent) if y_percent is not None else 50.0
 
     pos_override_tag = ""
-    if place_mode == "top" or y_pos_val <= 25.0:
-        alignment = 8  # Top-center
+    is_custom_xy = (abs(x_pos_val - 50.0) >= 0.5 or abs(y_pos_val - 50.0) >= 0.5)
+
+    if not is_custom_xy and place_mode == "top":
+        alignment = 7 if is_brat else 8  # Top-left vs Top-center
         margin_v = 160 if is_portrait else 90
-    elif place_mode == "bottom" or y_pos_val >= 75.0:
-        alignment = 2  # Bottom-center
+    elif not is_custom_xy and place_mode == "bottom":
+        alignment = 1 if is_brat else 2  # Bottom-left vs Bottom-center
         margin_v = 400 if is_portrait else 90
-    elif place_mode == "center" and abs(y_pos_val - 50.0) < 3.0:
-        alignment = 5  # Dead Center (Middle-Center)
+    elif not is_custom_xy and place_mode == "center":
+        alignment = 4 if is_brat else 5  # Alignment 4 = Middle-Left (Flush left, vertically centered)
         margin_v = 0
     else:
-        # Custom precise Y position percentage
-        alignment = 5
+        # Custom precise X and Y position percentage
+        alignment = 4 if is_brat else 5
         margin_v = 0
         target_y = int(res_y * (y_pos_val / 100.0))
-        pos_override_tag = f"{{\\an5\\pos({res_x // 2},{target_y})}}"
+        if is_brat:
+            base_x = margin_l
+            offset_x = int((x_pos_val - 50.0) * (res_x * 0.012))
+            target_x = max(20, base_x + offset_x)
+        else:
+            target_x = int(res_x * (x_pos_val / 100.0))
+        pos_override_tag = f"{{\\an{alignment}\\pos({target_x},{target_y})}}"
 
     # Brat theme styling
     if is_brat:
@@ -622,9 +703,13 @@ def build_ass_and_lrc_content(
         primary_color = b_theme["text_color"]
         outline_color = "&H00000000"
         back_color = "&H00000000"
-        bold_val = -1
-        scale_x_val = 90
-        blur_val = 1.4
+        bold_val = 0
+        scale_x_val = 68
+        blur_val = 0.0
+        spacing_val = int(spacing) if spacing is not None else -1
+        strikeout_val = b_theme.get("strikeout", 0)
+        if b_theme.get("font_name"):
+            effective_font = b_theme["font_name"]
     else:
         primary_color = tpl.get("primary_color", "&H00FFFFFF")
         outline_color = tpl.get("outline_color", "&H00000000")
@@ -632,6 +717,8 @@ def build_ass_and_lrc_content(
         bold_val = tpl.get("bold", -1)
         scale_x_val = tpl.get("scale_x", 100)
         blur_val = tpl.get("blur", 0.0)
+        spacing_val = int(spacing) if spacing is not None else 0
+        strikeout_val = 0
 
     actual_font_size = font_size if font_size and font_size > 0 else tpl.get("font_size", 54)
 
@@ -645,7 +732,7 @@ ScaledBorderAndShadow: yes
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,0,{scale_x_val},100,0,0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
+Style: Default,{effective_font},{actual_font_size},{primary_color},&H000000FF,{outline_color},{back_color},{bold_val},0,0,{strikeout_val},{scale_x_val},100,{spacing_val},0,1,{outline_width},{shadow_depth},{alignment},{margin_l},{margin_r},{margin_v},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -694,24 +781,53 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
         clean_text = text.replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\\N", " ").strip()
 
-        # Brat Aesthetic: 100% lowercase, dynamic font-size scaling, and authentic digital blur
+        # Brat Aesthetic: 100% lowercase, slim ScaleX 72, word-by-word accumulation with multi-line wrap
         if is_brat:
             clean_text = clean_text.lower()
-            char_count = len(clean_text)
-            if char_count > 36:
-                line_fs = 58
-            elif char_count > 22:
-                line_fs = 72
-            elif char_count > 12:
-                line_fs = 84
-            else:
-                line_fs = 96
-            brat_inline_tag = f"{{\\fs{line_fs}\\blur1.4}}"
-            dialogue_text = f"{pos_override_tag}{brat_inline_tag}{clean_text}" if pos_override_tag else f"{brat_inline_tag}{clean_text}"
+            words = [w for w in clean_text.split() if w.strip()]
+            num_words = len(words)
+            if num_words == 0:
+                words = [clean_text]
+                num_words = 1
+
+            line_dur = max(0.5, adjusted_end - adjusted_start)
+            # Allocate snappy typing window across the line duration
+            type_dur = min(line_dur * 0.85, max(0.4, num_words * 0.28))
+            step_t = type_dur / num_words
+
+            base_size = font_size if (font_size and font_size > 0) else 96
+            size_ratio = base_size / 96.0
+
+            def get_dynamic_fontsize(text_length: int) -> int:
+                if text_length > 70:
+                    base = 48
+                elif text_length > 40:
+                    base = 64
+                elif text_length > 20:
+                    base = 80
+                else:
+                    base = 96
+                return max(18, int(base * size_ratio))
+
+            accumulated_words = []
+            for w_idx in range(num_words):
+                accumulated_words.append(words[w_idx])
+                raw_text_string = " ".join(accumulated_words).lower()
+                text_string = format_brat_multiline(raw_text_string, max_chars_per_line=15)
+                
+                w_start = adjusted_start + (w_idx * step_t)
+                w_end = adjusted_start + ((w_idx + 1) * step_t) if (w_idx + 1) < num_words else adjusted_end
+
+                line_fs = get_dynamic_fontsize(len(raw_text_string))
+
+                # Authentic Brat low-quality Gaussian blur tag
+                eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 3.6
+                brat_inline_tag = f"{{\\fs{line_fs}\\fsp-1\\blur{eff_blur:.1f}}}"
+                dlg_text = f"{pos_override_tag}{brat_inline_tag}{text_string}" if pos_override_tag else f"{brat_inline_tag}{text_string}"
+                dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
         else:
             dialogue_text = f"{pos_override_tag}{clean_text}" if pos_override_tag else clean_text
-
-        dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
+            dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
         ts_formatted = seconds_to_lrc_timestamp(adjusted_start)
         structured_lines.append({
@@ -727,7 +843,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         f.write(ass_header + "\n".join(dialogues) + "\n")
 
     raw_lrc = "\n".join(raw_lrc_lines)
-    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} strictly single-line events, {res_x}x{res_y}, {place_mode}).")
+    emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} word accumulation events, {res_x}x{res_y}, {place_mode}).")
     return output_ass_path, structured_lines, raw_lrc
 
 
@@ -752,7 +868,9 @@ def render_lyric_video_ffmpeg(
     output_path: str = "output_lyric_video.mp4",
     duration: Optional[float] = None,
     aspect_ratio: str = "portrait",
-    bg_color: str = "black"
+    bg_color: str = "black",
+    is_brat: bool = False,
+    blur_amount: Optional[float] = None
 ) -> str:
     """Step 3: Run FFmpeg to render ASS subtitles over Portrait or Landscape MP4 video with GPU Acceleration."""
     if not duration or duration <= 0:
@@ -760,6 +878,8 @@ def render_lyric_video_ffmpeg(
 
     is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
     res_str = "1080x1920" if is_portrait else "1920x1080"
+    res_w = 1080 if is_portrait else 1920
+    res_h = 1920 if is_portrait else 1080
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 video using {encoder_name} (BG: {bg_color}, {duration:.1f}s)...")
@@ -768,12 +888,20 @@ def render_lyric_video_ffmpeg(
     if ":" in normalized_ass:
         normalized_ass = normalized_ass.replace(":", "\\:")
 
+    eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 3.6
+    if is_brat:
+        # Multi-pass Gaussian blur, pixelation and temporal motion blur for authentic low-res digital compression
+        gblur_filter = f",gblur=sigma={max(0.1, eff_blur * 0.55):.1f}:steps=2" if eff_blur > 0.05 else ""
+        vf_filter = f"ass={normalized_ass}{gblur_filter},tblend=all_mode=average:all_opacity=0.7,scale=iw/2:ih/2:flags=neighbor,scale={res_w}:{res_h}:flags=neighbor"
+    else:
+        vf_filter = f"ass={normalized_ass}"
+
     ffmpeg_cmd = [
         "ffmpeg", "-y",
         "-threads", "0",
         "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_str}:r=30:d={duration:.2f}",
         "-i", audio_path,
-        "-vf", f"ass={normalized_ass}",
+        "-vf", vf_filter,
         "-c:v", encoder_name,
     ] + encoder_flags + [
         "-pix_fmt", "yuv420p",
@@ -803,11 +931,14 @@ def generate_lyric_video(
     template: str = "template1",
     placement: str = "center",
     y_percent: Optional[float] = 50.0,
-    brat_theme: str = "green"
+    x_percent: Optional[float] = 50.0,
+    brat_theme: str = "green",
+    blur_amount: Optional[float] = None,
+    spacing: Optional[int] = None
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
-    if tpl_id in ["template4", "brat", "template_brat", "template4_brat"]:
+    if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
         b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
@@ -841,7 +972,10 @@ def generate_lyric_video(
         template_key=template,
         placement=placement,
         y_percent=y_percent,
-        brat_theme=brat_theme
+        x_percent=x_percent,
+        brat_theme=brat_theme,
+        blur_amount=blur_amount,
+        spacing=spacing
     )
 
     render_lyric_video_ffmpeg(
@@ -850,7 +984,9 @@ def generate_lyric_video(
         output_path=output_path,
         duration=duration,
         aspect_ratio=effective_aspect,
-        bg_color=bg_color
+        bg_color=bg_color,
+        is_brat=is_brat,
+        blur_amount=blur_amount
     )
 
     final_result = {
@@ -869,6 +1005,9 @@ def generate_lyric_video(
         "bg_color": bg_color,
         "placement": placement,
         "y_percent": y_percent,
+        "x_percent": x_percent,
+        "blur_amount": blur_amount,
+        "spacing": spacing,
         "language": yt_data.get("matched_lang", lang),
         "totalLines": len(structured_lines),
         "syncedLines": structured_lines,
@@ -892,6 +1031,9 @@ if __name__ == "__main__":
     template = "template1"
     placement = "center"
     ypos = 50.0
+    xpos = 50.0
+    blur = 3.6
+    spacing = None
     brat_theme = "green"
 
     for a in sys.argv[1:]:
@@ -920,6 +1062,21 @@ if __name__ == "__main__":
                 ypos = float(a.split("=")[1])
             except ValueError:
                 pass
+        elif a.startswith("--xpos="):
+            try:
+                xpos = float(a.split("=")[1])
+            except ValueError:
+                pass
+        elif a.startswith("--blur="):
+            try:
+                blur = float(a.split("=")[1])
+            except ValueError:
+                pass
+        elif a.startswith("--spacing="):
+            try:
+                spacing = int(a.split("=")[1])
+            except ValueError:
+                pass
         elif a.startswith("--brat-theme="):
             brat_theme = a.split("=")[1].strip()
 
@@ -934,7 +1091,10 @@ if __name__ == "__main__":
         template=template,
         placement=placement,
         y_percent=ypos,
-        brat_theme=brat_theme
+        x_percent=xpos,
+        brat_theme=brat_theme,
+        blur_amount=blur,
+        spacing=spacing
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

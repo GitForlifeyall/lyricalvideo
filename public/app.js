@@ -9,10 +9,16 @@ const state = {
   currentBackdrop: 'black',
   template: 'template1',
   fontFamily: 'Impact',
+  fontSize: 72,
+  blur: 3.2,
+  spacing: -1,
+  overlayEnabled: true,
   language: 'auto',
   placement: 'center',
   ypos: 50,
+  xpos: 50,
   bratTheme: 'green',
+  bratCasing: 'lower',
   lastQuery: 'The Weeknd - Blinding Lights'
 };
 
@@ -34,17 +40,38 @@ const bratLiveSandbox = document.getElementById('brat-live-sandbox');
 const bratLiveContainer = document.getElementById('brat-live-container');
 const bratLiveText = document.getElementById('brat-live-text');
 const bratSandboxInput = document.getElementById('brat-sandbox-input');
+const bratCasingToggleBtn = document.getElementById('brat-casing-toggle-btn');
+const bratChipBtns = document.querySelectorAll('.brat-chip-btn');
 
-// Placement controls
+// Placement & Size controls
 const placementPills = document.querySelectorAll('#placement-group .placement-pill');
+const xposSlider = document.getElementById('xpos-slider');
+const xposVal = document.getElementById('xpos-val');
 const yposSlider = document.getElementById('ypos-slider');
 const yposVal = document.getElementById('ypos-val');
+const fontsizeSlider = document.getElementById('fontsize-slider');
+const fontsizeVal = document.getElementById('fontsize-val');
+const blurSlider = document.getElementById('blur-slider');
+const blurVal = document.getElementById('blur-val');
+const spacingSlider = document.getElementById('spacing-slider');
+const spacingVal = document.getElementById('spacing-val');
 
-// Stage Placement controls
+// Stage Placement & Size controls
 const stagePlacementBtns = document.querySelectorAll('#stage-placement-group .stage-place-btn');
+const stageXposSlider = document.getElementById('stage-xpos-slider');
+const stageXposVal = document.getElementById('stage-xpos-val');
 const stageYposSlider = document.getElementById('stage-ypos-slider');
 const stageYposVal = document.getElementById('stage-ypos-val');
+const stageFontsizeSlider = document.getElementById('stage-fontsize-slider');
+const stageFontsizeVal = document.getElementById('stage-fontsize-val');
+const stageBlurSlider = document.getElementById('stage-blur-slider');
+const stageBlurVal = document.getElementById('stage-blur-val');
+const stageSpacingSlider = document.getElementById('stage-spacing-slider');
+const stageSpacingVal = document.getElementById('stage-spacing-val');
+const stageOverlayToggleBtn = document.getElementById('stage-overlay-toggle-btn');
 const stageRerenderBtn = document.getElementById('stage-rerender-btn');
+const stageLiveSubtitleOverlay = document.getElementById('stage-live-subtitle-overlay');
+const stageLiveSubtitleText = document.getElementById('stage-live-subtitle-text');
 
 // Pipeline elements
 const pipelineSection = document.getElementById('pipeline-section');
@@ -101,6 +128,7 @@ let logCount = 0;
 document.addEventListener('DOMContentLoaded', () => {
   setupEventListeners();
   loadVideosGallery();
+  applyRealtimePlacementAndSize();
 });
 
 function setupEventListeners() {
@@ -121,7 +149,7 @@ function setupEventListeners() {
       pill.classList.add('active');
       state.template = pill.dataset.template;
 
-      if (pill.dataset.template === 'template4_brat') {
+      if (pill.dataset.template === 'template4_brat' || pill.dataset.template === 'template_4_brat' || pill.dataset.template === 'brat') {
         if (bratOptionsRow) bratOptionsRow.style.display = 'flex';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'flex';
         state.fontFamily = 'Arial Narrow';
@@ -143,7 +171,7 @@ function setupEventListeners() {
       btn.classList.add('active');
       state.bratTheme = btn.dataset.theme;
       if (bratLiveContainer) {
-        bratLiveContainer.className = `brat-container theme-brat-${state.bratTheme}`;
+        bratLiveContainer.className = `brat-container theme-brat-${state.bratTheme}${state.bratCasing === 'upper' ? ' casing-upper' : ''}`;
       }
       showToast(`Brat Theme: ${btn.querySelector('.swatch-name').textContent.trim()}`);
     });
@@ -155,6 +183,46 @@ function setupEventListeners() {
       updateBratText(e.target.value);
     });
   }
+
+  // Brat Casing Toggle (100% Lowercase default vs Uppercase)
+  if (bratCasingToggleBtn) {
+    bratCasingToggleBtn.addEventListener('click', () => {
+      state.bratCasing = state.bratCasing === 'lower' ? 'upper' : 'lower';
+      bratCasingToggleBtn.classList.toggle('active', state.bratCasing === 'upper');
+      bratCasingToggleBtn.textContent = state.bratCasing === 'upper' ? 'UPPERCASE' : 'lowercase';
+      if (bratLiveContainer) {
+        bratLiveContainer.classList.toggle('casing-upper', state.bratCasing === 'upper');
+      }
+      updateBratText(bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
+      showToast(`Brat casing: ${state.bratCasing.toUpperCase()}`);
+    });
+  }
+
+  // Brat Preset Chips
+  bratChipBtns.forEach((chip) => {
+    chip.addEventListener('click', () => {
+      const presetText = chip.dataset.preset;
+      const chipTheme = chip.dataset.theme;
+      if (bratSandboxInput) bratSandboxInput.value = presetText;
+
+      if (chipTheme) {
+        const matchingSwatch = Array.from(bratPalettes).find(b => b.dataset.theme === chipTheme);
+        if (matchingSwatch) matchingSwatch.click();
+      }
+
+      if (presetText === 'THE MOMENT') {
+        state.bratCasing = 'upper';
+        if (bratCasingToggleBtn) {
+          bratCasingToggleBtn.classList.add('active');
+          bratCasingToggleBtn.textContent = 'UPPERCASE';
+        }
+        if (bratLiveContainer) bratLiveContainer.classList.add('casing-upper');
+      }
+
+      updateBratText(presetText, true);
+      showToast(`Preset: "${presetText}"`);
+    });
+  });
 
   // Font Selection
   fontBtns.forEach((btn) => {
@@ -207,21 +275,50 @@ function setupEventListeners() {
       pill.classList.add('active');
       state.placement = pill.dataset.placement;
       state.ypos = parseInt(pill.dataset.ypos) || 50;
-      if (yposSlider) yposSlider.value = state.ypos;
-      if (yposVal) yposVal.textContent = `${state.ypos}% (${pill.textContent.split(' ')[1] || 'Center'})`;
-      syncStagePlacementUI();
+      if (pill.dataset.xpos) state.xpos = parseInt(pill.dataset.xpos) || 50;
+      applyRealtimePlacementAndSize(true);
     });
   });
 
-  // Search Bar Range Slider
+  // Search Bar Horizontal (X) Placement Range Slider (Realtime)
+  if (xposSlider) {
+    xposSlider.addEventListener('input', (e) => {
+      state.xpos = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Search Bar Vertical (Y) Placement Range Slider (Realtime)
   if (yposSlider) {
     yposSlider.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       state.ypos = val;
       state.placement = val <= 25 ? 'top' : (val >= 75 ? 'bottom' : 'center');
-      if (yposVal) yposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
-      updatePlacementPills(state.placement);
-      syncStagePlacementUI();
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Search Bar Font Size Range Slider (Realtime)
+  if (fontsizeSlider) {
+    fontsizeSlider.addEventListener('input', (e) => {
+      state.fontSize = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Search Bar Blur Meter Range Slider (Realtime)
+  if (blurSlider) {
+    blurSlider.addEventListener('input', (e) => {
+      state.blur = parseFloat(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Search Bar Spacing Range Slider (Realtime)
+  if (spacingSlider) {
+    spacingSlider.addEventListener('input', (e) => {
+      state.spacing = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
     });
   }
 
@@ -232,34 +329,77 @@ function setupEventListeners() {
       btn.classList.add('active');
       state.placement = btn.dataset.placement;
       state.ypos = parseInt(btn.dataset.ypos) || 50;
-      if (stageYposSlider) stageYposSlider.value = state.ypos;
-      if (stageYposVal) stageYposVal.textContent = `${state.ypos}% (${btn.dataset.placement.toUpperCase()})`;
-      if (yposSlider) yposSlider.value = state.ypos;
-      if (yposVal) yposVal.textContent = `${state.ypos}% (${btn.dataset.placement.toUpperCase()})`;
-      updatePlacementPills(state.placement);
+      if (btn.dataset.xpos) state.xpos = parseInt(btn.dataset.xpos) || 50;
+      applyRealtimePlacementAndSize(true);
       showToast(`Placement set to ${btn.dataset.placement.toUpperCase()}`);
     });
   });
 
-  // Stage Range Slider
+  // Stage Horizontal (X) Placement Range Slider (Realtime)
+  if (stageXposSlider) {
+    stageXposSlider.addEventListener('input', (e) => {
+      state.xpos = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Stage Vertical (Y) Placement Range Slider (Realtime)
   if (stageYposSlider) {
     stageYposSlider.addEventListener('input', (e) => {
       const val = parseInt(e.target.value);
       state.ypos = val;
       state.placement = val <= 25 ? 'top' : (val >= 75 ? 'bottom' : 'center');
-      if (stageYposVal) stageYposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
-      if (yposSlider) yposSlider.value = val;
-      if (yposVal) yposVal.textContent = `${val}% (${state.placement.toUpperCase()})`;
-      updatePlacementPills(state.placement);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Stage Font Size Range Slider (Realtime)
+  if (stageFontsizeSlider) {
+    stageFontsizeSlider.addEventListener('input', (e) => {
+      state.fontSize = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Stage Blur Meter Range Slider (Realtime)
+  if (stageBlurSlider) {
+    stageBlurSlider.addEventListener('input', (e) => {
+      state.blur = parseFloat(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Stage Spacing Range Slider (Realtime)
+  if (stageSpacingSlider) {
+    stageSpacingSlider.addEventListener('input', (e) => {
+      state.spacing = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
+  // Live Video Overlay Layer Toggle Button
+  if (stageOverlayToggleBtn) {
+    stageOverlayToggleBtn.addEventListener('click', () => {
+      state.overlayEnabled = !state.overlayEnabled;
+      stageOverlayToggleBtn.classList.toggle('active', state.overlayEnabled);
+      stageOverlayToggleBtn.textContent = state.overlayEnabled
+        ? '✨ Live Real-Time Video Layer: ON'
+        : '❌ Live Real-Time Video Layer: OFF';
+      if (stageLiveSubtitleOverlay) {
+        stageLiveSubtitleOverlay.style.display = state.overlayEnabled ? 'flex' : 'none';
+      }
+      showToast(`Live Video Text Layer: ${state.overlayEnabled ? 'ENABLED' : 'DISABLED'}`);
     });
   }
 
   // Stage Re-render Button
   if (stageRerenderBtn) {
-    stageRerenderBtn.addEventListener('click', () => {
-      const query = state.lastQuery || songQueryInput.value.trim();
+    stageRerenderBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (state.isGenerating) return;
+      const query = state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : '');
       if (query) {
-        showToast(`Re-rendering with ${state.ypos}% (${state.placement.toUpperCase()}) placement... ⚡`);
+        showToast(`Re-rendering with X:${state.xpos}%, Y:${state.ypos}%, Size:${state.fontSize}px, Blur:${state.blur}px, Spacing:${state.spacing}px... ⚡`);
         startGenerationPipeline(query);
       }
     });
@@ -275,27 +415,117 @@ function setupEventListeners() {
   // Refresh Gallery
   refreshGalleryBtn.addEventListener('click', loadVideosGallery);
 
-  // Video Time Update for Synchronized Teleprompter
+  // Video Time Update for Synchronized Teleprompter & Live Real-Time Text Overlay
   outputVideoPlayer.addEventListener('timeupdate', () => {
     syncTeleprompter(outputVideoPlayer.currentTime);
   });
 }
 
-function updateBratText(text) {
-  if (!bratLiveText || !bratLiveContainer) return;
-  const clean = (text || '365 partygirl').toLowerCase().trim();
-  bratLiveText.textContent = clean;
-  
-  // Authentic Charli XCX Brat dynamic text scaling reflow algorithm
-  const len = clean.length;
-  let fs = '3.5rem';
-  if (len <= 8) fs = '4.6rem';
-  else if (len <= 15) fs = '3.8rem';
-  else if (len <= 24) fs = '3.0rem';
-  else if (len <= 38) fs = '2.3rem';
-  else fs = '1.75rem';
+// Brat Word-by-Word Accumulation & Auto-Fit Engine
+let bratAccumulationTimer = null;
 
-  bratLiveContainer.style.fontSize = fs;
+// Dynamic Auto-Fit Resizing Algorithm: iteratively shrinks font size to fit container limits
+function autoFitBratText(box, container) {
+  if (!box || !container) return;
+
+  const text = box.textContent.trim();
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+
+  // Authentic Brat Framing Rule: Single/two-word phrases center, multi-line blocks stretch edge-to-edge justified
+  if (wordCount <= 2 && !text.includes('\n')) {
+    box.style.textAlign = "center";
+    box.style.textAlignLast = "center";
+  } else {
+    box.style.textAlign = "justify";
+    box.style.textAlignLast = "justify";
+  }
+
+  // Reset to maximum starting font size
+  let fontSize = 110; // base px limit
+  box.style.fontSize = `${fontSize}px`;
+
+  // Reduce font size iteratively until content fits inside bounding box
+  while (
+    (box.scrollHeight > container.clientHeight || box.scrollWidth > container.clientWidth) &&
+    fontSize > 14
+  ) {
+    fontSize -= 2;
+    box.style.fontSize = `${fontSize}px`;
+  }
+}
+
+// Render cumulative words step with dynamic font-sizing and reflow
+function renderWordStep(wordsArray, currentIndex) {
+  const container = document.querySelector(".brat-box-container") || bratLiveContainer;
+  const box = document.getElementById("brat-live-text") || document.getElementById("bratTextBox") || bratLiveText;
+  if (!box || !container) return;
+  if (!wordsArray || wordsArray.length === 0) {
+    box.textContent = '';
+    return;
+  }
+
+  const boundedIndex = Math.min(wordsArray.length - 1, Math.max(0, currentIndex));
+  const rawText = wordsArray.slice(0, boundedIndex + 1).join(" ");
+  const currentText = state.bratCasing === 'upper' ? rawText.toUpperCase() : rawText.toLowerCase();
+
+  box.textContent = currentText;
+
+  // Trigger Crisp Word Entry Pop
+  box.classList.remove("motion-blur-active");
+  void box.offsetWidth; // Force DOM reflow
+  box.classList.add("motion-blur-active");
+
+  // Dynamic iterative auto-fit calculation
+  autoFitBratText(box, container);
+}
+
+function animateBratWordAccumulation(text) {
+  if (bratAccumulationTimer) {
+    clearInterval(bratAccumulationTimer);
+    bratAccumulationTimer = null;
+  }
+
+  const raw = text !== undefined ? text : (bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
+  const words = (raw || '365 partygirl').trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return;
+
+  let currentIdx = 0;
+  renderWordStep(words, 0);
+
+  if (words.length > 1) {
+    bratAccumulationTimer = setInterval(() => {
+      currentIdx++;
+      if (currentIdx < words.length) {
+        renderWordStep(words, currentIdx);
+      } else {
+        clearInterval(bratAccumulationTimer);
+        bratAccumulationTimer = null;
+      }
+    }, 120);
+  }
+}
+
+function updateBratText(input, animate = false) {
+  if (animate) {
+    animateBratWordAccumulation(input);
+    return;
+  }
+
+  if (bratAccumulationTimer) {
+    clearInterval(bratAccumulationTimer);
+    bratAccumulationTimer = null;
+  }
+
+  const container = document.querySelector(".brat-box-container") || bratLiveContainer;
+  const box = document.getElementById("brat-live-text") || document.getElementById("bratTextBox") || bratLiveText;
+  if (!box || !container) return;
+
+  const raw = input !== undefined ? String(input) : (bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
+  const currentText = state.bratCasing === 'upper' ? raw.toUpperCase() : raw.toLowerCase();
+  box.textContent = currentText;
+
+  // Auto-scale font size dynamically to fit bounding box
+  autoFitBratText(box, container);
 }
 
 function updatePlacementPills(place) {
@@ -303,10 +533,112 @@ function updatePlacementPills(place) {
   stagePlacementBtns.forEach(b => b.classList.toggle('active', b.dataset.placement === place));
 }
 
-function syncStagePlacementUI() {
+let stageOverlayHideTimer = null;
+
+function applyRealtimePlacementAndSize(showStageGuide = false) {
+  // 1. Move Brat Live Canvas text in realtime (X, Y translation, dynamic blur filter, and letter-spacing)
+  const bratText = document.getElementById("brat-live-text") || document.getElementById("bratTextBox") || bratLiveText;
+  const bratContainer = document.querySelector(".brat-box-container") || bratLiveContainer;
+  if (bratText && bratContainer) {
+    const offsetX = ((state.xpos - 50) * 0.75);
+    const offsetY = ((state.ypos - 50) * 0.75);
+    bratText.style.transform = `scaleX(0.68) translate(${offsetX}%, ${offsetY}%)`;
+    if (state.fontSize) {
+      bratText.style.fontSize = `${state.fontSize}px`;
+    }
+    const effContrast = Math.round(140 + (state.blur * 4.5));
+    bratText.style.filter = `blur(${state.blur}px) contrast(${effContrast}%)`;
+    bratText.style.letterSpacing = `${state.spacing}px`;
+  }
+
+  // 2. Interactive Subtitle Layer On Top of Video (Exact 1:1 Rendering of Original Text)
+  if (stageLiveSubtitleOverlay && stageLiveSubtitleText) {
+    stageLiveSubtitleOverlay.style.top = `${state.ypos}%`;
+    stageLiveSubtitleOverlay.style.transform = `translate(${state.xpos - 50}%, -50%)`;
+
+    stageLiveSubtitleText.style.fontSize = `${state.fontSize}px`;
+    const effContrast = Math.round(140 + (state.blur * 4.5));
+    stageLiveSubtitleText.style.filter = `blur(${state.blur}px) contrast(${effContrast}%)`;
+    stageLiveSubtitleText.style.letterSpacing = `${state.spacing}px`;
+
+    const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
+    if (isBrat) {
+      stageLiveSubtitleText.style.fontFamily = "'Arial Narrow', 'Helvetica Neue Condensed', sans-serif";
+      stageLiveSubtitleText.style.fontWeight = '500'; // Exact original medium/regular weight
+      stageLiveSubtitleText.style.fontStretch = 'condensed';
+      stageLiveSubtitleText.style.lineHeight = '0.88';
+      stageLiveSubtitleText.style.transform = 'scaleX(0.68)';
+      stageLiveSubtitleText.style.textAlign = 'justify';
+      stageLiveSubtitleText.style.textAlignLast = 'justify';
+      stageLiveSubtitleText.style.textTransform = state.bratCasing === 'upper' ? 'uppercase' : 'lowercase';
+      if (state.bratTheme === 'white') {
+        stageLiveSubtitleText.style.color = '#000000';
+        stageLiveSubtitleText.style.textShadow = 'none';
+      } else if (state.bratTheme === 'blue') {
+        stageLiveSubtitleText.style.color = '#DE0100';
+        stageLiveSubtitleText.style.fontFamily = 'Impact, "Arial Black", sans-serif';
+        stageLiveSubtitleText.style.fontWeight = '900';
+        stageLiveSubtitleText.style.textTransform = 'uppercase';
+      } else if (state.bratTheme === 'strike') {
+        stageLiveSubtitleText.style.color = '#000000';
+        stageLiveSubtitleText.style.textDecoration = 'line-through';
+      } else if (state.bratTheme === 'black') {
+        stageLiveSubtitleText.style.color = '#FFFFFF';
+        stageLiveSubtitleText.style.textShadow = 'none';
+      } else {
+        stageLiveSubtitleText.style.color = '#000000';
+        stageLiveSubtitleText.style.textShadow = 'none';
+      }
+    } else {
+      stageLiveSubtitleText.style.fontFamily = state.fontFamily || 'Impact';
+      stageLiveSubtitleText.style.fontWeight = (state.template === 'template1' || state.fontFamily === 'Impact') ? '800' : '600';
+      stageLiveSubtitleText.style.transform = 'none';
+      stageLiveSubtitleText.style.textAlign = 'center';
+      stageLiveSubtitleText.style.textAlignLast = 'center';
+      stageLiveSubtitleText.style.textTransform = 'none';
+      stageLiveSubtitleText.style.color = '#FFFFFF';
+      stageLiveSubtitleText.style.textShadow = '0 2px 10px rgba(0,0,0,0.95), 0 0 5px #000000';
+    }
+
+    if (state.overlayEnabled) {
+      stageLiveSubtitleOverlay.style.display = 'flex';
+    } else {
+      stageLiveSubtitleOverlay.style.display = 'none';
+    }
+  }
+
+  // 3. Keep Badges and Slider Inputs in Sync
+  if (xposSlider) xposSlider.value = state.xpos;
+  if (stageXposSlider) stageXposSlider.value = state.xpos;
+  const xDesc = state.xpos === 50 ? ' (Center)' : (state.xpos < 50 ? ' (Left)' : ' (Right)');
+  if (xposVal) xposVal.textContent = `${state.xpos}%${xDesc}`;
+  if (stageXposVal) stageXposVal.textContent = `${state.xpos}%${xDesc}`;
+
+  if (yposSlider) yposSlider.value = state.ypos;
   if (stageYposSlider) stageYposSlider.value = state.ypos;
+  if (yposVal) yposVal.textContent = `${state.ypos}% (${state.placement.toUpperCase()})`;
   if (stageYposVal) stageYposVal.textContent = `${state.ypos}% (${state.placement.toUpperCase()})`;
-  stagePlacementBtns.forEach(b => b.classList.toggle('active', b.dataset.placement === state.placement));
+
+  if (fontsizeSlider) fontsizeSlider.value = state.fontSize;
+  if (stageFontsizeSlider) stageFontsizeSlider.value = state.fontSize;
+  if (fontsizeVal) fontsizeVal.textContent = `${state.fontSize}px${state.fontSize === 72 ? ' (Default)' : ''}`;
+  if (stageFontsizeVal) stageFontsizeVal.textContent = `${state.fontSize}px${state.fontSize === 72 ? ' (Default)' : ''}`;
+
+  if (blurSlider) blurSlider.value = state.blur;
+  if (stageBlurSlider) stageBlurSlider.value = state.blur;
+  if (blurVal) blurVal.textContent = `${state.blur}px`;
+  if (stageBlurVal) stageBlurVal.textContent = `${state.blur}px`;
+
+  if (spacingSlider) spacingSlider.value = state.spacing;
+  if (stageSpacingSlider) stageSpacingSlider.value = state.spacing;
+  if (spacingVal) spacingVal.textContent = `${state.spacing}px${state.spacing === -1 ? ' (Default)' : ''}`;
+  if (stageSpacingVal) stageSpacingVal.textContent = `${state.spacing}px${state.spacing === -1 ? ' (Default)' : ''}`;
+
+  updatePlacementPills(state.placement);
+}
+
+function syncStagePlacementUI() {
+  applyRealtimePlacementAndSize();
 }
 
 // 1. Start Server-Sent Events (SSE) Video Generation
@@ -318,6 +650,7 @@ function startGenerationPipeline(query) {
 
   state.isGenerating = true;
   generateBtn.disabled = true;
+  if (stageRerenderBtn) stageRerenderBtn.disabled = true;
   btnText.textContent = 'Generating 1080p MP4...';
   generateBtn.classList.add('loading');
 
@@ -326,8 +659,8 @@ function startGenerationPipeline(query) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, language, placement, ypos, and brat_theme parameters
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&brat_theme=${encodeURIComponent(state.bratTheme)}`;
+  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, language, placement, ypos, xpos, and brat_theme parameters
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 
@@ -347,27 +680,44 @@ function startGenerationPipeline(query) {
   });
 
   eventSource.addEventListener('complete', (e) => {
-    const data = JSON.parse(e.data);
-    handleGenerationComplete(data);
-    eventSource.close();
-    state.isGenerating = false;
-    generateBtn.disabled = false;
-    btnText.textContent = 'Generate Video Overlay';
-    generateBtn.classList.remove('loading');
+    try {
+      const data = JSON.parse(e.data);
+      handleGenerationComplete(data);
+    } finally {
+      eventSource.close();
+      state.currentEventSource = null;
+      state.isGenerating = false;
+      generateBtn.disabled = false;
+      if (stageRerenderBtn) stageRerenderBtn.disabled = false;
+      btnText.textContent = 'Generate Video Overlay';
+      generateBtn.classList.remove('loading');
+    }
   });
 
-  eventSource.addEventListener('error', (e) => {
+  const handleError = (e) => {
     console.error('SSE Error:', e);
     appendConsoleLog('[ERROR] Video generation pipeline failed or connection closed.');
     pipelineStatusText.textContent = 'Generation Failed (Check console output)';
     eventSource.close();
+    state.currentEventSource = null;
     state.isGenerating = false;
     generateBtn.disabled = false;
+    if (stageRerenderBtn) stageRerenderBtn.disabled = false;
     btnText.textContent = 'Generate Video Overlay';
     generateBtn.classList.remove('loading');
-    showToast('Generation failed. Please try a different track title.');
-  });
+    showToast('Generation finished or disconnected.');
+  };
+
+  eventSource.addEventListener('error', handleError);
+  eventSource.onerror = handleError;
 }
+
+window.addEventListener('beforeunload', () => {
+  if (state.currentEventSource) {
+    state.currentEventSource.close();
+    state.currentEventSource = null;
+  }
+});
 
 // 2. Handle Progress Updates from Python Generator
 function handleProgressUpdate(data) {
@@ -423,10 +773,18 @@ function handleGenerationComplete(data) {
   }
 
   // Set Video Player source
-  outputVideoPlayer.pause();
-  videoSource.src = data.videoUrl;
-  outputVideoPlayer.load();
-  outputVideoPlayer.play().catch(() => {});
+  try {
+    if (stageLiveSubtitleOverlay) stageLiveSubtitleOverlay.style.display = 'none';
+    outputVideoPlayer.pause();
+    if (videoSource) videoSource.src = data.videoUrl;
+    outputVideoPlayer.load();
+    const playPromise = outputVideoPlayer.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => {});
+    }
+  } catch (err) {
+    console.warn("Video player initialization note:", err);
+  }
 
   // Setup Download Links
   dlVideoBtn.href = data.videoUrl;
@@ -505,20 +863,49 @@ function renderTeleprompter(lines) {
 }
 
 function syncTeleprompter(currentTime) {
-  if (!state.syncedLines || state.syncedLines.length === 0) return;
+  if (!state.syncedLines || !Array.isArray(state.syncedLines) || state.syncedLines.length === 0) return;
 
   let activeIndex = -1;
   for (let i = 0; i < state.syncedLines.length; i++) {
-    if (state.syncedLines[i].timeSeconds <= currentTime) {
+    const s = state.syncedLines[i];
+    if (s && s.timeSeconds !== undefined && s.timeSeconds <= currentTime) {
       activeIndex = i;
     } else {
       break;
     }
   }
 
+  if (activeIndex >= 0 && state.syncedLines[activeIndex]) {
+    const activeLine = state.syncedLines[activeIndex];
+    const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
+    
+    // Real-Time Lyric Rendering directly on the Interactive Video Layer
+    if (stageLiveSubtitleText && state.overlayEnabled && activeLine && activeLine.text) {
+      if (isBrat) {
+        const words = activeLine.text.trim().split(/\s+/).filter(Boolean);
+        if (words.length > 0) {
+          const lineDur = Math.max(0.4, (activeLine.endSeconds || (activeLine.timeSeconds + 2.5)) - activeLine.timeSeconds);
+          const typeDur = lineDur * 0.85;
+          const elapsed = Math.max(0, currentTime - activeLine.timeSeconds);
+          const progress = Math.min(1, elapsed / typeDur);
+          const wordIdx = Math.min(words.length - 1, Math.floor(progress * words.length));
+          const currentWords = words.slice(0, wordIdx + 1).join(' ');
+          stageLiveSubtitleText.textContent = state.bratCasing === 'upper' ? currentWords.toUpperCase() : currentWords.toLowerCase();
+
+          if (wordIdx !== lastRenderedWordCount || activeIndex !== state.currentLineIndex) {
+            lastRenderedWordCount = wordIdx;
+            renderWordStep(words, wordIdx);
+          }
+        }
+      } else {
+        stageLiveSubtitleText.textContent = activeLine.text;
+      }
+    }
+  }
+
   if (activeIndex !== state.currentLineIndex) {
     state.currentLineIndex = activeIndex;
-    const allRows = teleprompterStream.querySelectorAll('.teleprompter-row');
+    const allRows = teleprompterStream ? teleprompterStream.querySelectorAll('.teleprompter-row') : [];
     allRows.forEach((row, idx) => {
       const isActive = idx === activeIndex;
       const isPast = idx < activeIndex;
@@ -527,11 +914,9 @@ function syncTeleprompter(currentTime) {
     });
 
     if (activeIndex >= 0 && allRows[activeIndex]) {
-      allRows[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'center' });
-      // If brat preview is active, update live reflow text
-      if (state.template === 'template4_brat' && state.syncedLines[activeIndex]) {
-        updateBratText(state.syncedLines[activeIndex].text);
-      }
+      try {
+        allRows[activeIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      } catch (e) {}
     }
   }
 }
@@ -587,6 +972,7 @@ async function loadVideosGallery() {
       `;
 
       card.querySelector('.play-gallery-btn').addEventListener('click', () => {
+        if (stageLiveSubtitleOverlay) stageLiveSubtitleOverlay.style.display = 'none';
         outputVideoPlayer.pause();
         videoSource.src = vid.url;
         outputVideoPlayer.load();

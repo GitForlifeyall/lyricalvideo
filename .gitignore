@@ -6,3 +6,12 @@ yarn-error.log*
 .DS_Store
 dist/
 build/
+__pycache__/
+*.py[cod]
+*$py.class
+temp_audio.mp3
+lyrics.ass
+*.ass
+*.mp3
+public/videos/*.mp4
+output_lyric_video.mp4

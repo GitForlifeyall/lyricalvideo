@@ -112,7 +112,11 @@ app.get('/api/generate-video-stream', (req, res) => {
   const lang = req.query.lang || 'auto';
   const placement = req.query.placement || 'center';
   const ypos = req.query.ypos || '50';
+  const xpos = req.query.xpos || '50';
   const bratTheme = req.query.brat_theme || 'green';
+  const fontsize = req.query.fontsize || '';
+  const blur = req.query.blur || '';
+  const spacing = req.query.spacing || '';
 
   const pythonScript = path.join(__dirname, '../generator.py');
   const pythonArgs = [
@@ -124,11 +128,21 @@ app.get('/api/generate-video-stream', (req, res) => {
     `--lang=${lang}`,
     `--placement=${placement}`,
     `--ypos=${ypos}`,
+    `--xpos=${xpos}`,
     `--brat-theme=${bratTheme}`,
     '--json-progress'
   ];
   if (font) {
     pythonArgs.push(`--font=${font}`);
+  }
+  if (fontsize) {
+    pythonArgs.push(`--fontsize=${fontsize}`);
+  }
+  if (blur) {
+    pythonArgs.push(`--blur=${blur}`);
+  }
+  if (spacing !== '') {
+    pythonArgs.push(`--spacing=${spacing}`);
   }
 
   const pythonProcess = spawn('python', pythonArgs, {

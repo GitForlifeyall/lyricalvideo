@@ -1,0 +1,17 @@
+{
+  "watch": ["src/"],
+  "ext": "js,mjs,json",
+  "ignore": [
+    "public/videos/*",
+    "public/*",
+    "lyrics/*",
+    "temp_*",
+    "*.ass",
+    "*.mp3",
+    "*.mp4",
+    "*.webm",
+    "*.lrc",
+    "test_output.*"
+  ],
+  "delay": "1000"
+}

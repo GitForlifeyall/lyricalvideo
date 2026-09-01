@@ -314,11 +314,12 @@ body {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-family: var(--font-sans);
-  font-size: 1.15rem;
-  font-weight: 500;
+  font-family: "Times New Roman", Times, Georgia, serif;
+  font-size: 1.25rem;
+  font-weight: 400;
   outline: none;
   min-width: 0;
+  letter-spacing: -0.01em;
 }
 
 .command-input::placeholder {
@@ -644,72 +645,157 @@ body {
   max-width: 540px;
   margin: 0 auto;
   aspect-ratio: 1 / 1;
-  max-height: 280px;
+  max-height: 290px;
   border-radius: var(--radius-sm);
   overflow: hidden;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  position: relative;
 }
 
-/* 1:1 Brat Canvas Container */
-.brat-container {
-  width: 100%;
-  height: 100%;
+.brat-stage {
   display: flex;
   align-items: center;
   justify-content: center;
-  text-align: center;
-  font-family: "Arial Narrow", "Arial", sans-serif;
-  font-weight: 700;
-  filter: blur(0.55px);
-  text-transform: lowercase;
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-  padding: 1.5rem;
-  word-break: break-word;
-  overflow: hidden;
-  transition: all 0.15s ease-in-out;
-  user-select: none;
+  width: 100%;
+  height: 100%;
 }
 
-.brat-container span {
-  display: block;
-  width: 100%;
+/* Strict Box Constraint */
+.brat-box-container,
+.brat-container {
+  width: 90vw;
+  max-width: 520px; /* Forces text to break into multi-line block */
+  height: 100%;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 6%;
+  overflow: hidden;
+  background-color: #8ACE00;
   text-align: center;
-  transform: scaleX(0.92);
+  transition: background-color 0.15s ease-in-out;
+  user-select: none;
+  position: relative;
+}
+
+.brat-container.casing-upper,
+.brat-box-container.casing-upper {
+  text-transform: uppercase;
+}
+
+.brat-text,
+.brat-text-box,
+.brat-preview-text,
+.brat-container span {
+  font-family: "Arial Narrow", Arial, sans-serif;
+  font-weight: 400;
+  font-stretch: condensed;
+  transform: scaleX(0.68);
+  transform-origin: left center; /* Keeps horizontal compression anchored to left margin */
+
+  /* AUTHENTIC FULL EDGE-TO-EDGE JUSTIFIED BLOCK ALIGNMENT */
+  text-align: justify !important;
+  text-align-last: justify !important;
+
+  line-height: 0.88;
+  letter-spacing: -0.035em;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+  width: 100%;
+  color: #000000;
+  display: block;
+
+  /* Authentic Low-Quality Brat Gaussian Blur & High Contrast */
+  filter: blur(3.2px) contrast(155%);
+}
+
+/* Low-Quality Brat Word Spawn */
+@keyframes bratWordPop {
+  0% {
+    filter: blur(6px) contrast(170%);
+    transform: scaleX(0.66);
+    opacity: 0.85;
+  }
+  100% {
+    filter: blur(3.2px) contrast(155%);
+    transform: scaleX(0.68);
+    opacity: 1;
+  }
+}
+
+.motion-blur-active {
+  animation: bratWordPop 0.1s ease-out forwards;
 }
 
 /* Brat Color Themes */
 .theme-brat-green {
-  background-color: #8ACE00;
-  color: #000000;
+  background-color: #8ACE00 !important;
+  color: #000000 !important;
 }
 
 .theme-brat-white {
-  background-color: #FFFFFF;
-  color: #000000;
+  background-color: #FFFFFF !important;
+  color: #000000 !important;
 }
 
 .theme-brat-red {
-  background-color: #FF0000;
-  color: #0000FF;
+  background-color: #FF0000 !important;
+  color: #0000FF !important;
 }
 
 .theme-brat-black {
-  background-color: #000000;
-  color: #FFFFFF;
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+}
+
+.theme-brat-blue {
+  background-color: #0A00AD !important;
+  color: #DE0100 !important;
+}
+
+.theme-brat-blue .brat-text,
+.theme-brat-blue .brat-text-box,
+.theme-brat-blue span {
+  color: #DE0100 !important;
+  font-family: Impact, "Arial Black", sans-serif !important;
+  text-transform: uppercase !important;
+}
+
+.theme-brat-strike {
+  background-color: #8ACE00 !important;
+  color: #000000 !important;
+}
+
+.theme-brat-strike .brat-text,
+.theme-brat-strike .brat-text-box,
+.theme-brat-strike span {
+  text-decoration: line-through !important;
+  text-decoration-thickness: 3px !important;
 }
 
 .sandbox-input-bar {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.brat-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .brat-input-field {
-  width: 100%;
+  flex: 1;
   background: rgba(0, 0, 0, 0.5);
   border: 1px solid rgba(138, 206, 0, 0.4);
   color: #8ace00;
-  font-family: var(--font-mono);
-  font-size: 0.85rem;
+  font-family: "Times New Roman", Times, Georgia, serif;
+  font-size: 1.05rem;
   padding: 0.5rem 0.85rem;
   border-radius: var(--radius-sm);
   outline: none;
@@ -719,6 +805,58 @@ body {
 .brat-input-field:focus {
   border-color: #8ace00;
   box-shadow: 0 0 12px rgba(138, 206, 0, 0.3);
+}
+
+.brat-casing-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 0.45rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.brat-casing-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+}
+
+.brat-casing-btn.active {
+  background: #8ace00;
+  color: #000000;
+  border-color: #8ace00;
+}
+
+.brat-chips-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.brat-chip-btn {
+  background: rgba(138, 206, 0, 0.08);
+  border: 1px solid rgba(138, 206, 0, 0.2);
+  color: #c0ea68;
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.brat-chip-btn:hover {
+  background: rgba(138, 206, 0, 0.2);
+  border-color: #8ace00;
+  color: #ffffff;
+  transform: translateY(-1px);
 }
 
 .backdrop-brat {
@@ -1079,6 +1217,44 @@ body {
   height: 100%;
   object-fit: contain;
   outline: none;
+}
+
+/* Stage Realtime Subtitle Overlay */
+.stage-live-subtitle-overlay {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8%;
+  box-sizing: border-box;
+  transition: top 0.05s linear;
+}
+
+.stage-live-subtitle-box {
+  max-width: 90%;
+  text-align: center;
+  transition: all 0.05s linear;
+}
+
+.stage-live-subtitle-text {
+  font-family: "Arial Narrow", "Helvetica Neue Condensed", Impact, sans-serif;
+  font-weight: 500;
+  font-stretch: condensed;
+  color: #ffffff;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95), 0 0 5px #000000;
+  font-size: 2.2rem;
+  line-height: 0.92;
+  letter-spacing: -0.035em;
+  display: inline-block;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
 }
 
 /* Stage Sidebar (Downloads & Teleprompter) */

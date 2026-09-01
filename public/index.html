@@ -86,6 +86,14 @@
               <span class="swatch-circle" style="background: #FFFFFF; border: 2px solid #000;"></span>
               <span class="swatch-name">Brat White</span>
             </button>
+            <button type="button" class="brat-swatch-btn" data-theme="blue" title="SWEAT Tour (Cobalt Blue / Red)">
+              <span class="swatch-circle" style="background: #0A00AD; border: 2px solid #DE0100;"></span>
+              <span class="swatch-name">SWEAT Tour</span>
+            </button>
+            <button type="button" class="brat-swatch-btn" data-theme="strike" title="Brat Strike (Remix)">
+              <span class="swatch-circle" style="background: #8ACE00; border: 2px solid #000; text-decoration: line-through;">—</span>
+              <span class="swatch-name">Strike Remix</span>
+            </button>
             <button type="button" class="brat-swatch-btn" data-theme="red" title="The Moment (Red / Blue)">
               <span class="swatch-circle" style="background: #FF0000; border: 2px solid #0000FF;"></span>
               <span class="swatch-name">The Moment</span>
@@ -107,12 +115,27 @@
             <span class="sandbox-hint">Type or watch lyrics dynamically wrap &amp; re-center</span>
           </div>
           <div class="brat-canvas-wrapper" id="brat-canvas-wrapper">
-            <div class="brat-container theme-brat-green" id="brat-live-container">
-              <span id="brat-live-text">365 partygirl</span>
+            <div class="brat-stage">
+              <div class="brat-box-container brat-container theme-brat-green" id="brat-live-container">
+                <span class="brat-text-box" id="brat-live-text">365 partygirl</span>
+              </div>
             </div>
           </div>
           <div class="sandbox-input-bar">
-            <input type="text" id="brat-sandbox-input" class="brat-input-field" placeholder="Type words here to test live dynamic reflow scaling..." value="365 partygirl" />
+            <div class="brat-input-row">
+              <input type="text" id="brat-sandbox-input" class="brat-input-field" placeholder="Type words here to test live dynamic reflow scaling..." value="365 partygirl" />
+              <button type="button" id="brat-casing-toggle-btn" class="brat-casing-btn" title="Toggle 100% Lowercase / Raw Uppercase">lowercase</button>
+            </div>
+            <div class="brat-chips-row">
+              <span style="font-size: 0.72rem; color: var(--text-muted);">Presets:</span>
+              <button type="button" class="brat-chip-btn" data-preset="365 partygirl">365 partygirl</button>
+              <button type="button" class="brat-chip-btn" data-preset="brat and it's the same but there's three more songs so it's not">deluxe edition</button>
+              <button type="button" class="brat-chip-btn" data-preset="SWEAT" data-theme="blue">SWEAT Tour</button>
+              <button type="button" class="brat-chip-btn" data-preset="THE MOMENT" data-theme="red">THE MOMENT</button>
+              <button type="button" class="brat-chip-btn" data-preset="club classics">club classics</button>
+              <button type="button" class="brat-chip-btn" data-preset="sympathy is a knife">sympathy is a knife</button>
+              <button type="button" class="brat-chip-btn" data-preset="talk talk">talk talk</button>
+            </div>
           </div>
         </div>
 
@@ -120,12 +143,11 @@
         <div class="control-row">
           <span class="control-label">🔤 Font / Style:</span>
           <div class="pill-group font-pill-group" id="font-group">
-            <button type="button" class="pill-btn font-pill active" data-font="Impact" style="font-family: Impact, sans-serif;">Impact</button>
-            <button type="button" class="pill-btn font-pill" data-font="Arial Narrow" style="font-family: 'Arial Narrow', Arial, sans-serif;">Arial Narrow (Brat)</button>
+            <button type="button" class="pill-btn font-pill active" data-font="Arial Narrow" style="font-family: 'Arial Narrow', sans-serif; font-weight: 500;">Arial Narrow (Brat)</button>
+            <button type="button" class="pill-btn font-pill" data-font="Impact" style="font-family: Impact, sans-serif;">Impact (Bold)</button>
+            <button type="button" class="pill-btn font-pill" data-font="Times New Roman" style="font-family: 'Times New Roman', Times, serif;">Times Roman (Prompt)</button>
             <button type="button" class="pill-btn font-pill" data-font="Montserrat" style="font-family: Montserrat, sans-serif;">Montserrat</button>
             <button type="button" class="pill-btn font-pill" data-font="Arial" style="font-family: Arial, sans-serif;">Arial</button>
-            <button type="button" class="pill-btn font-pill" data-font="Segoe UI" style="font-family: 'Segoe UI', sans-serif;">Segoe UI</button>
-            <button type="button" class="pill-btn font-pill" data-font="Trebuchet MS" style="font-family: 'Trebuchet MS', sans-serif;">Trebuchet</button>
             <button type="button" class="pill-btn font-pill" data-font="Georgia" style="font-family: Georgia, serif;">Georgia</button>
             <button type="button" class="pill-btn font-pill" data-font="Courier New" style="font-family: 'Courier New', monospace;">Courier</button>
           </div>
@@ -157,17 +179,33 @@
           </div>
         </div>
 
-        <!-- Dynamic Lyric Placement (Default: Center) -->
+        <!-- Dynamic Lyric Placement & Font Size Controls (Realtime) -->
         <div class="control-row">
-          <span class="control-label">📍 Placement:</span>
+          <span class="control-label">📍 Placement &amp; Size:</span>
           <div class="pill-group" id="placement-group">
-            <button type="button" class="pill-btn placement-pill" data-placement="top" data-ypos="20">⬆️ Top (20%)</button>
-            <button type="button" class="pill-btn placement-pill active" data-placement="center" data-ypos="50">🎯 Center (50% Default)</button>
-            <button type="button" class="pill-btn placement-pill" data-placement="bottom" data-ypos="80">⬇️ Bottom (80%)</button>
+            <button type="button" class="pill-btn placement-pill" data-placement="top" data-ypos="20">⬆️ Top</button>
+            <button type="button" class="pill-btn placement-pill active" data-placement="center" data-ypos="50" data-xpos="50">🎯 Center</button>
+            <button type="button" class="pill-btn placement-pill" data-placement="bottom" data-ypos="80">⬇️ Bottom</button>
           </div>
           <div class="placement-slider-wrap">
-            <label for="ypos-slider" class="slider-label">Vertical Position: <span id="ypos-val" class="ypos-badge">50% (Center)</span></label>
+            <label for="xpos-slider" class="slider-label">Horizontal (X): <span id="xpos-val" class="ypos-badge">50% (Center)</span></label>
+            <input type="range" id="xpos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
+          </div>
+          <div class="placement-slider-wrap">
+            <label for="ypos-slider" class="slider-label">Vertical (Y): <span id="ypos-val" class="ypos-badge">50% (Center)</span></label>
             <input type="range" id="ypos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
+          </div>
+          <div class="placement-slider-wrap">
+            <label for="fontsize-slider" class="slider-label">Text Size: <span id="fontsize-val" class="ypos-badge">72px (Auto)</span></label>
+            <input type="range" id="fontsize-slider" class="ypos-range" min="28" max="140" value="72" step="2" />
+          </div>
+          <div class="placement-slider-wrap">
+            <label for="blur-slider" class="slider-label">🌫️ Blur Meter: <span id="blur-val" class="ypos-badge">3.2px</span></label>
+            <input type="range" id="blur-slider" class="ypos-range" min="0" max="10" value="3.2" step="0.2" />
+          </div>
+          <div class="placement-slider-wrap">
+            <label for="spacing-slider" class="slider-label">📐 Letter Spacing: <span id="spacing-val" class="ypos-badge">-1px (Default)</span></label>
+            <input type="range" id="spacing-slider" class="ypos-range" min="-5" max="25" value="-1" step="1" />
           </div>
         </div>
       </div>
@@ -276,6 +314,12 @@
               <source id="video-source" src="" type="video/mp4">
               Your browser does not support the video tag.
             </video>
+            <!-- Realtime Interactive Placement & Size Preview Overlay -->
+            <div id="stage-live-subtitle-overlay" class="stage-live-subtitle-overlay" style="display: none;">
+              <div id="stage-live-subtitle-box" class="stage-live-subtitle-box">
+                <span id="stage-live-subtitle-text"></span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -283,16 +327,37 @@
         <aside class="stage-sidebar">
           <!-- Interactive Subtitle Reposition & Re-render Box -->
           <div class="reposition-card">
-            <h4 class="download-card-title">📍 Interactive Lyric Placement</h4>
-            <p class="reposition-desc">Adjust where the subtitles appear on the video before downloading:</p>
+            <h4 class="download-card-title">📍 Interactive Lyric Placement &amp; Sizing</h4>
+            <p class="reposition-desc">Move position and resize subtitles in real time before downloading:</p>
             <div class="pill-group" id="stage-placement-group" style="margin-bottom: 0.75rem;">
               <button type="button" class="pill-btn stage-place-btn" data-placement="top" data-ypos="20">⬆️ Top</button>
               <button type="button" class="pill-btn stage-place-btn active" data-placement="center" data-ypos="50">🎯 Center (Default)</button>
               <button type="button" class="pill-btn stage-place-btn" data-placement="bottom" data-ypos="80">⬇️ Bottom</button>
             </div>
             <div class="stage-slider-wrap">
-              <label for="stage-ypos-slider" class="slider-label">Vertical Position: <strong id="stage-ypos-val">50% (Center)</strong></label>
+              <label for="stage-xpos-slider" class="slider-label">Horizontal (X): <strong id="stage-xpos-val">50% (Center)</strong></label>
+              <input type="range" id="stage-xpos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
+            </div>
+            <div class="stage-slider-wrap">
+              <label for="stage-ypos-slider" class="slider-label">Vertical (Y): <strong id="stage-ypos-val">50% (Center)</strong></label>
               <input type="range" id="stage-ypos-slider" class="ypos-range" min="10" max="90" value="50" step="1" />
+            </div>
+            <div class="stage-slider-wrap">
+              <label for="stage-fontsize-slider" class="slider-label">Text Size: <strong id="stage-fontsize-val">72px (Default)</strong></label>
+              <input type="range" id="stage-fontsize-slider" class="ypos-range" min="28" max="140" value="72" step="2" />
+            </div>
+            <div class="stage-slider-wrap">
+              <label for="stage-blur-slider" class="slider-label">🌫️ Blur Meter: <strong id="stage-blur-val">3.2px</strong></label>
+              <input type="range" id="stage-blur-slider" class="ypos-range" min="0" max="10" value="3.2" step="0.2" />
+            </div>
+            <div class="stage-slider-wrap">
+              <label for="stage-spacing-slider" class="slider-label">📐 Letter Spacing: <strong id="stage-spacing-val">-1px (Default)</strong></label>
+              <input type="range" id="stage-spacing-slider" class="ypos-range" min="-5" max="25" value="-1" step="1" />
+            </div>
+            <div style="margin: 0.5rem 0 0.85rem 0;">
+              <button type="button" id="stage-overlay-toggle-btn" class="pill-btn active" style="width: 100%; justify-content: center; font-size: 0.8rem; padding: 0.5rem;">
+                ✨ Live Real-Time Video Layer: ON
+              </button>
             </div>
             <button type="button" id="stage-rerender-btn" class="btn-rerender">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">

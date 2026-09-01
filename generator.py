@@ -890,7 +890,7 @@ def render_exact_pillow_overlay_video(
     spacing: Optional[int] = None,
     word_spacing: Optional[int] = None
 ) -> str:
-    """Renders 100% pixel-perfect Gaussian blur and typography using Pillow rasterization and FFmpeg overlay."""
+    """Renders 100% pixel-perfect Gaussian blur and word-by-word typography typing using Pillow rasterization and FFmpeg concat overlay."""
     is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
     res_w = 1080 if is_portrait else 1920
     res_h = 1920 if is_portrait else 1080
@@ -930,6 +930,10 @@ def render_exact_pillow_overlay_video(
     temp_dir = os.path.join(os.path.dirname(output_path), f"temp_cues_{int(time.time()*1000)}")
     os.makedirs(temp_dir, exist_ok=True)
 
+    blank_img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+    blank_png_path = os.path.join(temp_dir, "blank.png")
+    blank_img.save(blank_png_path)
+
     def wrap_lines(txt, max_chars):
         words = txt.split()
         if not words:
@@ -950,68 +954,122 @@ def render_exact_pillow_overlay_video(
             lines.append(" ".join(cur))
         return lines
 
-    inputs = ["ffmpeg", "-y", "-threads", "0", "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_w}x{res_h}:r=30:d={duration:.2f}"]
-    inputs.extend(["-i", audio_path])
-    filter_parts = []
-    prev_label = "0:v"
-
-    valid_cues = []
-    for idx, (s_t, e_t, raw_t) in enumerate(cues):
+    sorted_cues = []
+    for s_t, e_t, raw_t in cues:
         clean_t = raw_t.strip()
-        if not clean_t:
-            continue
-        valid_cues.append((s_t, e_t, clean_t))
+        if clean_t:
+            sorted_cues.append((max(0.0, float(s_t)), max(0.0, float(e_t)), clean_t))
+    sorted_cues.sort(key=lambda x: x[0])
 
-    for idx, (s_t, e_t, clean_t) in enumerate(valid_cues):
+    concat_lines = []
+    current_t = 0.0
+    cue_img_idx = 0
+
+    for s_t, e_t, clean_t in sorted_cues:
+        if s_t > current_t:
+            gap = s_t - current_t
+            if gap > 0.02:
+                concat_lines.append("file 'blank.png'")
+                concat_lines.append(f"duration {gap:.3f}")
+            current_t = s_t
+
         disp_text = clean_t.upper() if is_upper else (clean_t.lower() if is_brat else clean_t)
-        lines = wrap_lines(disp_text, 11 if is_brat else 22)
-        if not lines:
-            continue
+        
+        if is_brat:
+            words = [w for w in disp_text.split() if w.strip()]
+            num_words = len(words)
+            if num_words == 0:
+                words = [disp_text]
+                num_words = 1
 
-        img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
-        draw = ImageDraw.Draw(img)
+            line_dur = max(0.4, e_t - s_t)
+            type_dur = min(line_dur * 0.85, max(0.3, num_words * 0.28))
+            step_t = type_dur / num_words
 
-        line_h = int(fs_1080 * 0.92)
-        total_h = len(lines) * line_h
-        start_y = int(target_y - (total_h / 2) + (line_h / 2))
+            acc_words = []
+            for w_idx in range(num_words):
+                acc_words.append(words[w_idx])
+                raw_str = " ".join(acc_words)
+                lines = wrap_lines(raw_str, 11)
 
-        for l_idx, line in enumerate(lines):
-            y = start_y + (l_idx * line_h)
-            draw.text((target_x, y), line, font=font, fill=fill_rgba, anchor="mm", align="center")
-
-        if is_brat and scale_x < 100:
-            bbox = img.getbbox()
-            if bbox:
-                crop = img.crop(bbox)
-                new_w = max(1, int(crop.width * (scale_x / 100.0)))
-                resized = crop.resize((new_w, crop.height), Image.Resampling.BICUBIC)
                 img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
-                paste_x = int(target_x - (new_w / 2))
-                paste_y = bbox[1]
-                img.paste(resized, (paste_x, paste_y), resized)
+                draw = ImageDraw.Draw(img)
 
-        if blur_rad > 0.1:
-            img = img.filter(ImageFilter.GaussianBlur(radius=blur_rad))
+                line_h = int(fs_1080 * 0.92)
+                total_h = len(lines) * line_h
+                start_y = int(target_y - (total_h / 2) + (line_h / 2))
 
-        png_path = os.path.join(temp_dir, f"cue_{idx:04d}.png")
-        img.save(png_path)
+                for l_idx, line in enumerate(lines):
+                    y = start_y + (l_idx * line_h)
+                    draw.text((target_x, y), line, font=font, fill=fill_rgba, anchor="mm", align="center")
 
-        input_idx = idx + 2
-        inputs.extend(["-i", png_path])
-        out_label = f"v{idx+1}" if (idx + 1) < len(valid_cues) else "outv"
-        filter_parts.append(f"[{prev_label}][{input_idx}:v]overlay=0:0:enable='between(t,{s_t:.2f},{e_t:.2f})'[{out_label}]")
-        prev_label = out_label
+                if scale_x < 100:
+                    bbox = img.getbbox()
+                    if bbox:
+                        crop = img.crop(bbox)
+                        new_w = max(1, int(crop.width * (scale_x / 100.0)))
+                        resized = crop.resize((new_w, crop.height), Image.Resampling.BICUBIC)
+                        img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+                        paste_x = int(target_x - (new_w / 2))
+                        paste_y = bbox[1]
+                        img.paste(resized, (paste_x, paste_y), resized)
 
-    if not filter_parts:
-        filter_parts.append("[0:v]copy[outv]")
+                if blur_rad > 0.1:
+                    img = img.filter(ImageFilter.GaussianBlur(radius=blur_rad))
 
-    fc = ";".join(filter_parts)
+                cue_file = f"cue_{cue_img_idx:05d}.png"
+                img.save(os.path.join(temp_dir, cue_file))
+                cue_img_idx += 1
+
+                w_dur = step_t if (w_idx + 1) < num_words else max(0.2, e_t - (s_t + (num_words - 1) * step_t))
+                concat_lines.append(f"file '{cue_file}'")
+                concat_lines.append(f"duration {w_dur:.3f}")
+                current_t += w_dur
+        else:
+            lines = wrap_lines(disp_text, 22)
+            img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+
+            line_h = int(fs_1080 * 0.92)
+            total_h = len(lines) * line_h
+            start_y = int(target_y - (total_h / 2) + (line_h / 2))
+
+            for l_idx, line in enumerate(lines):
+                y = start_y + (l_idx * line_h)
+                draw.text((target_x, y), line, font=font, fill=fill_rgba, anchor="mm", align="center")
+
+            if blur_rad > 0.1:
+                img = img.filter(ImageFilter.GaussianBlur(radius=blur_rad))
+
+            cue_file = f"cue_{cue_img_idx:05d}.png"
+            img.save(os.path.join(temp_dir, cue_file))
+            cue_img_idx += 1
+
+            dur = max(0.2, e_t - s_t)
+            concat_lines.append(f"file '{cue_file}'")
+            concat_lines.append(f"duration {dur:.3f}")
+            current_t = e_t
+
+    if duration > current_t:
+        concat_lines.append("file 'blank.png'")
+        concat_lines.append(f"duration {duration - current_t:.3f}")
+
+    concat_lines.append("file 'blank.png'")
+
+    manifest_path = os.path.join(temp_dir, "manifest.txt")
+    with open(manifest_path, "w", encoding="utf-8") as mf:
+        mf.write("\n".join(concat_lines) + "\n")
+
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
 
-    inputs.extend([
-        "-filter_complex", fc,
+    cmd = [
+        "ffmpeg", "-y", "-threads", "0",
+        "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_w}x{res_h}:r=30:d={duration:.2f}",
+        "-f", "concat", "-safe", "0", "-i", manifest_path,
+        "-i", audio_path,
+        "-filter_complex", "[0:v][1:v]overlay=0:0[outv]",
         "-map", "[outv]",
-        "-map", "1:a:0",
+        "-map", "2:a:0",
         "-c:v", encoder_name,
     ] + encoder_flags + [
         "-pix_fmt", "yuv420p",
@@ -1020,10 +1078,10 @@ def render_exact_pillow_overlay_video(
         "-movflags", "+faststart",
         "-shortest",
         output_path
-    ])
+    ]
 
     try:
-        subprocess.run(inputs, check=True)
+        subprocess.run(cmd, check=True)
     finally:
         for f in os.listdir(temp_dir):
             try:

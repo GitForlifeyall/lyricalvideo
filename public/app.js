@@ -12,6 +12,7 @@ const state = {
   fontSize: 72,
   blur: 3.2,
   spacing: -1,
+  wordSpacing: 0,
   overlayEnabled: true,
   language: 'auto',
   placement: 'center',
@@ -55,6 +56,8 @@ const blurSlider = document.getElementById('blur-slider');
 const blurVal = document.getElementById('blur-val');
 const spacingSlider = document.getElementById('spacing-slider');
 const spacingVal = document.getElementById('spacing-val');
+const wordSpacingSlider = document.getElementById('word-spacing-slider');
+const wordSpacingVal = document.getElementById('word-spacing-val');
 
 // Stage Placement & Size controls
 const stagePlacementBtns = document.querySelectorAll('#stage-placement-group .stage-place-btn');
@@ -68,6 +71,8 @@ const stageBlurSlider = document.getElementById('stage-blur-slider');
 const stageBlurVal = document.getElementById('stage-blur-val');
 const stageSpacingSlider = document.getElementById('stage-spacing-slider');
 const stageSpacingVal = document.getElementById('stage-spacing-val');
+const stageWordSpacingSlider = document.getElementById('stage-word-spacing-slider');
+const stageWordSpacingVal = document.getElementById('stage-word-spacing-val');
 const stageOverlayToggleBtn = document.getElementById('stage-overlay-toggle-btn');
 const stageRerenderBtn = document.getElementById('stage-rerender-btn');
 const stageLiveSubtitleOverlay = document.getElementById('stage-live-subtitle-overlay');
@@ -322,6 +327,14 @@ function setupEventListeners() {
     });
   }
 
+  // Search Bar Word Spacing Range Slider (Realtime)
+  if (wordSpacingSlider) {
+    wordSpacingSlider.addEventListener('input', (e) => {
+      state.wordSpacing = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
   // Stage Reposition Pills
   stagePlacementBtns.forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -377,6 +390,14 @@ function setupEventListeners() {
     });
   }
 
+  // Stage Word Spacing Range Slider (Realtime)
+  if (stageWordSpacingSlider) {
+    stageWordSpacingSlider.addEventListener('input', (e) => {
+      state.wordSpacing = parseInt(e.target.value);
+      applyRealtimePlacementAndSize(true);
+    });
+  }
+
   // Live Video Overlay Layer Toggle Button
   if (stageOverlayToggleBtn) {
     stageOverlayToggleBtn.addEventListener('click', () => {
@@ -399,7 +420,7 @@ function setupEventListeners() {
       if (state.isGenerating) return;
       const query = state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : '');
       if (query) {
-        showToast(`Burning custom layer: X:${state.xpos}%, Y:${state.ypos}%, Size:${state.fontSize}px, Blur:${state.blur}px, Spacing:${state.spacing}px... ⚡`);
+        showToast(`Burning custom layer: X:${state.xpos}%, Y:${state.ypos}%, Size:${state.fontSize}px, Blur:${state.blur}px, Spacing:${state.spacing}px, Word Spacing:${state.wordSpacing}px... ⚡`);
         startGenerationPipeline(query, true);
       }
     });
@@ -549,7 +570,7 @@ function updatePlacementPills(place) {
 let stageOverlayHideTimer = null;
 
 function applyRealtimePlacementAndSize(showStageGuide = false) {
-  // 1. Move Brat Live Canvas text in realtime (X, Y translation, dynamic blur filter, and letter-spacing)
+  // 1. Move Brat Live Canvas text in realtime (X, Y translation, dynamic blur filter, letter-spacing, and word-spacing)
   const bratText = document.getElementById("brat-live-text") || document.getElementById("bratTextBox") || bratLiveText;
   const bratContainer = document.querySelector(".brat-box-container") || bratLiveContainer;
   if (bratText && bratContainer) {
@@ -562,6 +583,7 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
     const effContrast = Math.round(140 + (state.blur * 4.5));
     bratText.style.filter = `blur(${state.blur}px) contrast(${effContrast}%)`;
     bratText.style.letterSpacing = `${state.spacing}px`;
+    bratText.style.wordSpacing = `${state.wordSpacing}px`;
   }
 
   // 2. Interactive Subtitle Layer On Top of Video (Exact 1:1 Rendering of Original Text)
@@ -573,6 +595,7 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
     const effContrast = Math.round(140 + (state.blur * 4.5));
     stageLiveSubtitleText.style.filter = `blur(${state.blur}px) contrast(${effContrast}%)`;
     stageLiveSubtitleText.style.letterSpacing = `${state.spacing}px`;
+    stageLiveSubtitleText.style.wordSpacing = `${state.wordSpacing}px`;
 
     const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
     if (isBrat) {
@@ -647,6 +670,11 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
   if (spacingVal) spacingVal.textContent = `${state.spacing}px${state.spacing === -1 ? ' (Default)' : ''}`;
   if (stageSpacingVal) stageSpacingVal.textContent = `${state.spacing}px${state.spacing === -1 ? ' (Default)' : ''}`;
 
+  if (wordSpacingSlider) wordSpacingSlider.value = state.wordSpacing;
+  if (stageWordSpacingSlider) stageWordSpacingSlider.value = state.wordSpacing;
+  if (wordSpacingVal) wordSpacingVal.textContent = `${state.wordSpacing}px${state.wordSpacing === 0 ? ' (Default)' : ''}`;
+  if (stageWordSpacingVal) stageWordSpacingVal.textContent = `${state.wordSpacing}px${state.wordSpacing === 0 ? ' (Default)' : ''}`;
+
   updatePlacementPills(state.placement);
 }
 
@@ -654,7 +682,6 @@ function syncStagePlacementUI() {
   applyRealtimePlacementAndSize();
 }
 
-// 1. Start Server-Sent Events (SSE) Video Generation
 // 1. Start Server-Sent Events (SSE) Video Generation
 function startGenerationPipeline(query, burnText = false) {
   state.lastQuery = query;
@@ -673,8 +700,8 @@ function startGenerationPipeline(query, burnText = false) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, language, placement, ypos, xpos, brat_theme, and burn_text
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}`;
+  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, word_spacing, language, placement, ypos, xpos, brat_theme, and burn_text
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
 

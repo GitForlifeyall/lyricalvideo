@@ -117,6 +117,7 @@ app.get('/api/generate-video-stream', (req, res) => {
   const fontsize = req.query.fontsize || '';
   const blur = req.query.blur || '';
   const spacing = req.query.spacing || '';
+  const wordSpacing = req.query.word_spacing || '';
 
   const burnText = req.query.burn_text === 'true';
 
@@ -148,6 +149,9 @@ app.get('/api/generate-video-stream', (req, res) => {
   }
   if (spacing !== '') {
     pythonArgs.push(`--spacing=${spacing}`);
+  }
+  if (wordSpacing !== '') {
+    pythonArgs.push(`--word-spacing=${wordSpacing}`);
   }
 
   const pythonProcess = spawn('python', pythonArgs, {

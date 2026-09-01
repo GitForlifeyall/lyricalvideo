@@ -480,9 +480,15 @@ BRAT_THEMES = {
         "name": "SWEAT Tour (Blue/Red)",
         "bg_color": "0x0A00AD",
         "text_color": "&H000001DE",
+        "outline_color": "&H00000000",
         "hex_bg": "#0A00AD",
         "hex_text": "#DE0100",
         "font_name": "Impact",
+        "bold": -1,
+        "scale_x": 100,
+        "outline_width": 4,
+        "shadow_depth": 3,
+        "uppercase": True,
     },
     "strike": {
         "name": "Brat Strike",
@@ -665,50 +671,31 @@ def build_ass_and_lrc_content(
         res_y = 1080
         margin_l = 240 if is_brat else 60
         margin_r = 240 if is_brat else 60
-        outline_width = 0 if is_brat else tpl.get("outline_width", 3)
-        shadow_depth = 0 if is_brat else tpl.get("shadow_depth", 2)
 
-    # Dynamic Placement configuration (Default: Center)
+    # Dynamic Placement configuration (Exact 1:1 Center Anchor with Live Layer)
     place_mode = (placement or "center").lower().strip()
     x_pos_val = float(x_percent) if x_percent is not None else 50.0
     y_pos_val = float(y_percent) if y_percent is not None else 50.0
 
-    pos_override_tag = ""
-    is_custom_xy = (abs(x_pos_val - 50.0) >= 0.5 or abs(y_pos_val - 50.0) >= 0.5)
-
-    if not is_custom_xy and place_mode == "top":
-        alignment = 7 if is_brat else 8  # Top-left vs Top-center
-        margin_v = 160 if is_portrait else 90
-    elif not is_custom_xy and place_mode == "bottom":
-        alignment = 1 if is_brat else 2  # Bottom-left vs Bottom-center
-        margin_v = 400 if is_portrait else 90
-    elif not is_custom_xy and place_mode == "center":
-        alignment = 4 if is_brat else 5  # Alignment 4 = Middle-Left (Flush left, vertically centered)
-        margin_v = 0
-    else:
-        # Custom precise X and Y position percentage
-        alignment = 4 if is_brat else 5
-        margin_v = 0
-        target_y = int(res_y * (y_pos_val / 100.0))
-        if is_brat:
-            base_x = margin_l
-            offset_x = int((x_pos_val - 50.0) * (res_x * 0.012))
-            target_x = max(20, base_x + offset_x)
-        else:
-            target_x = int(res_x * (x_pos_val / 100.0))
-        pos_override_tag = f"{{\\an{alignment}\\pos({target_x},{target_y})}}"
+    target_x = int(res_x * (x_pos_val / 100.0))
+    target_y = int(res_y * (y_pos_val / 100.0))
+    pos_override_tag = f"{{\\an5\\pos({target_x},{target_y})}}"
+    alignment = 5
+    margin_v = 0
 
     # Brat theme styling
     if is_brat:
         b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
         primary_color = b_theme["text_color"]
-        outline_color = "&H00000000"
+        outline_color = b_theme.get("outline_color", "&H00000000")
         back_color = "&H00000000"
-        bold_val = 0
-        scale_x_val = 68
+        bold_val = b_theme.get("bold", 0)
+        scale_x_val = b_theme.get("scale_x", 68)
         blur_val = 0.0
         spacing_val = int(spacing) if spacing is not None else -1
         strikeout_val = b_theme.get("strikeout", 0)
+        outline_width = b_theme.get("outline_width", 0)
+        shadow_depth = b_theme.get("shadow_depth", 0)
         if b_theme.get("font_name"):
             effective_font = b_theme["font_name"]
     else:
@@ -720,8 +707,10 @@ def build_ass_and_lrc_content(
         blur_val = tpl.get("blur", 0.0)
         spacing_val = int(spacing) if spacing is not None else 0
         strikeout_val = 0
+        outline_width = tpl.get("outline_width", 4)
+        shadow_depth = tpl.get("shadow_depth", 3)
 
-    actual_font_size = font_size if font_size and font_size > 0 else tpl.get("font_size", 54)
+    actual_font_size = font_size if font_size and font_size > 0 else (tpl.get("font_size") or 72)
     w_space_val = int(word_spacing) if word_spacing is not None else 0
 
     def apply_word_spacing(txt: str, let_sp: int, wrd_sp: int) -> str:
@@ -748,7 +737,6 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     # Flatten and sanitize cues into strictly 1 line per cue
     single_line_cues: List[Tuple[float, float, str]] = []
     for s_t, e_t, raw_t in cues:
-        # Split on any newline so each sentence is its own line
         sub_lines = [l.strip() for l in raw_t.replace("\r", "\n").replace("\\N", "\n").split("\n") if l.strip()]
         if not sub_lines:
             continue
@@ -758,14 +746,15 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 single_line_cues.append((s_t, e_t, clean_l))
         else:
             # Distribute multi-line cue into equal sub-segments
-            total_dur = max(1.5, e_t - s_t)
-            sub_step = total_dur / len(sub_lines)
-            for j, sub_l in enumerate(sub_lines):
-                clean_l = " ".join(sub_l.split())
-                if clean_l:
-                    sub_start = s_t + (j * sub_step)
-                    sub_end = sub_start + sub_step
-                    single_line_cues.append((sub_start, sub_end, clean_l))
+            n_sub = len(sub_lines)
+            cue_dur = max(0.6, e_t - s_t)
+            sub_dur = cue_dur / n_sub
+            for sub_idx, sl in enumerate(sub_lines):
+                c_sl = " ".join(sl.split())
+                if c_sl:
+                    sub_s = s_t + (sub_idx * sub_dur)
+                    sub_e = s_t + ((sub_idx + 1) * sub_dur) if (sub_idx + 1) < n_sub else e_t
+                    single_line_cues.append((sub_s, sub_e, c_sl))
 
     # Sort cues by start timestamp
     single_line_cues.sort(key=lambda x: x[0])
@@ -774,69 +763,42 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     structured_lines = []
     raw_lrc_lines = []
 
-    for i in range(len(single_line_cues)):
-        start_sec, end_sec, text = single_line_cues[i]
-        adjusted_start = max(0.0, start_sec + offset_seconds)
-        adjusted_end = max(adjusted_start + 0.6, end_sec + offset_seconds)
-
-        # STRICT 1-LINE ENFORCEMENT: Clamp end time to never exceed the next line's start time!
-        if i < len(single_line_cues) - 1:
-            next_start = max(0.0, single_line_cues[i + 1][0] + offset_seconds)
-            if next_start > adjusted_start:
-                adjusted_end = min(adjusted_end, next_start)
-            else:
-                adjusted_end = adjusted_start + 0.8
-
+    for i, (start_t, end_t, text) in enumerate(single_line_cues):
+        adjusted_start = max(0.0, start_t + offset_seconds)
+        adjusted_end = max(adjusted_start + 0.5, end_t + offset_seconds)
         clean_text = text.replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\\N", " ").strip()
 
-        # Brat Aesthetic: 100% lowercase, slim ScaleX 72, word-by-word accumulation with multi-line wrap
         if is_brat:
-            clean_text = clean_text.lower()
-            words = [w for w in clean_text.split() if w.strip()]
+            is_upper = (brat_theme == "blue" or b_theme.get("uppercase", False))
+            display_text = clean_text.upper() if is_upper else clean_text.lower()
+            words = [w for w in display_text.split() if w.strip()]
             num_words = len(words)
             if num_words == 0:
-                words = [clean_text]
+                words = [display_text]
                 num_words = 1
 
             line_dur = max(0.5, adjusted_end - adjusted_start)
-            # Allocate snappy typing window across the line duration
             type_dur = min(line_dur * 0.85, max(0.4, num_words * 0.28))
             step_t = type_dur / num_words
-
-            base_size = font_size if (font_size and font_size > 0) else 96
-            size_ratio = base_size / 96.0
-
-            def get_dynamic_fontsize(text_length: int) -> int:
-                if text_length > 70:
-                    base = 48
-                elif text_length > 40:
-                    base = 64
-                elif text_length > 20:
-                    base = 80
-                else:
-                    base = 96
-                return max(18, int(base * size_ratio))
 
             accumulated_words = []
             for w_idx in range(num_words):
                 accumulated_words.append(words[w_idx])
-                raw_text_string = " ".join(accumulated_words).lower()
-                text_string = format_brat_multiline(raw_text_string, max_chars_per_line=15)
-                text_string = apply_word_spacing(text_string, spacing_val, w_space_val)
+                raw_text_string = " ".join(accumulated_words)
+                text_string = apply_word_spacing(raw_text_string, spacing_val, w_space_val)
                 
                 w_start = adjusted_start + (w_idx * step_t)
                 w_end = adjusted_start + ((w_idx + 1) * step_t) if (w_idx + 1) < num_words else adjusted_end
 
-                line_fs = get_dynamic_fontsize(len(raw_text_string))
-
-                # Authentic Brat low-quality Gaussian blur tag
-                eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 3.6
-                brat_inline_tag = f"{{\\fs{line_fs}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
+                eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 0.0
+                brat_inline_tag = f"{{\\fs{actual_font_size}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
                 dlg_text = f"{pos_override_tag}{brat_inline_tag}{text_string}" if pos_override_tag else f"{brat_inline_tag}{text_string}"
                 dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
         else:
             formatted_clean = apply_word_spacing(clean_text, spacing_val, w_space_val)
-            dialogue_text = f"{pos_override_tag}{formatted_clean}" if pos_override_tag else formatted_clean
+            eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 0.0
+            inline_tag = f"{{\\fs{actual_font_size}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
+            dialogue_text = f"{pos_override_tag}{inline_tag}{formatted_clean}" if pos_override_tag else f"{inline_tag}{formatted_clean}"
             dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
         ts_formatted = seconds_to_lrc_timestamp(adjusted_start)

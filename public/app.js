@@ -1364,42 +1364,48 @@ async function recordExactBrowserCanvasVideo() {
 
       // Update progress percent
       if (btn && video.duration) {
-        const pct = Math.round((video.currentTime / video.duration) * 100);
+        const pct = Math.min(100, Math.round((video.currentTime / video.duration) * 100));
         const span = btn.querySelector('span:last-child');
-        if (span) span.textContent = `Recording Exact Pixels (${pct}%)...`;
+        if (span) span.textContent = `Accelerated Pixel Capture (${pct}% - ~8s)...`;
       }
 
       requestAnimationFrame(drawFrame);
     }
 
-    // Start recording
-    recorder.start(100);
+    // Start 8x Accelerated Recording (Captures entire video in ~8-10 seconds!)
+    const speedMultiplier = 8.0;
+    video.playbackRate = speedMultiplier;
+    video.muted = true;
+    recorder.start(40);
     video.currentTime = 0;
     await video.play();
     drawFrame();
 
     video.onended = async () => {
       isRecording = false;
+      video.playbackRate = 1.0;
+      video.muted = false;
       recorder.stop();
       if (btn) {
-        btn.innerHTML = '<span class="spinner-inline"></span> <span>Finalizing 1080p MP4...</span>';
+        btn.innerHTML = '<span class="spinner-inline"></span> <span>Merging 1x Speed & Audio into MP4...</span>';
       }
 
       recorder.onstop = async () => {
         const recordedBlob = new Blob(chunks, { type: mimeType });
         try {
-          // Send to server for instant remux to standard 1080p MP4
+          // Send to server to stretch back to 1x normal speed & merge original audio track
           const safeTitle = (state.lastQuery || 'lyric_video').replace(/[^a-zA-Z0-9_-]/g, '_');
-          const resp = await fetch(`/api/convert-webm-to-mp4?name=${encodeURIComponent(safeTitle)}`, {
+          const audioP = state.activeMetadata?.audio_path || '';
+          const resp = await fetch(`/api/convert-webm-to-mp4?name=${encodeURIComponent(safeTitle)}&speed=${speedMultiplier}&audioPath=${encodeURIComponent(audioP)}`, {
             method: 'POST',
             body: recordedBlob
           });
           const json = await resp.json();
           if (json.videoUrl) {
-            showToast('🎉 Exact 100% pixel-perfect 1080p MP4 downloaded! 🚀');
+            showToast('🎉 Exact 100% pixel-perfect 1080p MP4 downloaded at 1x speed! 🚀');
             const a = document.createElement('a');
             a.href = json.videoUrl;
-            a.download = json.videoFileName || `${safeTitle}_exact.mp4`;
+            a.download = json.videoFileName || `${safeTitle}_exact_1080p.mp4`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);

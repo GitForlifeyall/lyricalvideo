@@ -299,28 +299,48 @@ app.post('/api/quick-burn-video', async (req, res) => {
 
 /**
  * POST /api/convert-webm-to-mp4
- * Remuxes browser-recorded WebM into universal 1080p MP4 using FFmpeg in ~1s
+ * Remuxes browser-recorded WebM into universal 1080p MP4 at 1x speed with full audio using FFmpeg
  */
 app.post('/api/convert-webm-to-mp4', (req, res) => {
   const safeName = (req.query.name || 'recorded_video').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
+  const speed = parseFloat(req.query.speed) || 1.0;
+  const audioParam = req.query.audioPath;
   const webmPath = path.join(VIDEOS_DIR, `${safeName}_${Date.now()}.webm`);
-  const mp4FileName = `${safeName}_exact_${Date.now()}.mp4`;
+  const mp4FileName = `${safeName}_exact_1080p_${Date.now()}.mp4`;
   const mp4Path = path.join(VIDEOS_DIR, mp4FileName);
 
   const writeStream = fs.createWriteStream(webmPath);
   req.pipe(writeStream);
 
   writeStream.on('finish', () => {
-    const ffmpeg = spawn('ffmpeg', [
-      '-y',
-      '-i', webmPath,
-      '-c:v', 'libx264',
-      '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac',
-      '-b:a', '192k',
-      '-movflags', '+faststart',
-      mp4Path
-    ]);
+    const resolvedAudio = (audioParam && fs.existsSync(audioParam))
+      ? audioParam
+      : (fs.existsSync(path.join(VIDEOS_DIR, 'temp_audio.mp3'))
+        ? path.join(VIDEOS_DIR, 'temp_audio.mp3')
+        : (fs.existsSync(path.join(__dirname, '../temp_audio.mp3'))
+          ? path.join(__dirname, '../temp_audio.mp3')
+          : null));
+
+    const ffmpegArgs = ['-y', '-i', webmPath];
+    if (resolvedAudio) {
+      ffmpegArgs.push('-i', resolvedAudio);
+    }
+
+    if (speed > 1.01) {
+      ffmpegArgs.push('-filter:v', `setpts=${speed.toFixed(2)}*PTS`);
+    }
+
+    ffmpegArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
+
+    if (resolvedAudio) {
+      ffmpegArgs.push('-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '192k', '-shortest');
+    } else {
+      ffmpegArgs.push('-c:a', 'aac', '-b:a', '192k');
+    }
+
+    ffmpegArgs.push('-movflags', '+faststart', mp4Path);
+
+    const ffmpeg = spawn('ffmpeg', ffmpegArgs);
 
     ffmpeg.on('close', (code) => {
       if (code === 0 && fs.existsSync(mp4Path)) {

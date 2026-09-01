@@ -757,6 +757,26 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     structured_lines = []
     raw_lrc_lines = []
 
+    def wrap_lyrics_multiline(text: str, max_chars: int = 11) -> str:
+        words = text.split()
+        if not words:
+            return text
+        lines = []
+        current_line = []
+        current_len = 0
+        for w in words:
+            w_len = len(w)
+            if current_line and (current_len + 1 + w_len > max_chars):
+                lines.append(" ".join(current_line))
+                current_line = [w]
+                current_len = w_len
+            else:
+                current_line.append(w)
+                current_len += (1 if current_line else 0) + w_len
+        if current_line:
+            lines.append(" ".join(current_line))
+        return r"\N".join(lines)
+
     for i, (start_t, end_t, text) in enumerate(single_line_cues):
         adjusted_start = max(0.0, start_t + offset_seconds)
         adjusted_end = max(adjusted_start + 0.5, end_t + offset_seconds)
@@ -779,18 +799,18 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             for w_idx in range(num_words):
                 accumulated_words.append(words[w_idx])
                 raw_text_string = " ".join(accumulated_words)
-                text_string = apply_word_spacing(raw_text_string, spacing_val, w_space_val)
+                wrapped_text = wrap_lyrics_multiline(raw_text_string, max_chars=11)
+                text_string = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
                 
                 w_start = adjusted_start + (w_idx * step_t)
                 w_end = adjusted_start + ((w_idx + 1) * step_t) if (w_idx + 1) < num_words else adjusted_end
 
-                eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 0.0
                 brat_inline_tag = f"{{\\fs{actual_font_size}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
                 dlg_text = f"{pos_override_tag}{brat_inline_tag}{text_string}" if pos_override_tag else f"{brat_inline_tag}{text_string}"
                 dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
         else:
-            formatted_clean = apply_word_spacing(clean_text, spacing_val, w_space_val)
-            eff_blur = float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else 0.0
+            wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=22)
+            formatted_clean = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
             inline_tag = f"{{\\fs{actual_font_size}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
             dialogue_text = f"{pos_override_tag}{inline_tag}{formatted_clean}" if pos_override_tag else f"{inline_tag}{formatted_clean}"
             dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")

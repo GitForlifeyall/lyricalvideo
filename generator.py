@@ -658,19 +658,12 @@ def build_ass_and_lrc_content(
             (2.0, max(6.0, audio_duration - 2.0), "[Music Playing - Native YouTube Audio]")
         ]
 
-    # Configure canvas resolution
-    if is_portrait:
-        res_x = 1080
-        res_y = 1920
-        margin_l = 180 if is_brat else 40
-        margin_r = 180 if is_brat else 40
-        outline_width = 0 if is_brat else tpl.get("outline_width", 4)
-        shadow_depth = 0 if is_brat else tpl.get("shadow_depth", 3)
-    else:
-        res_x = 1920
-        res_y = 1080
-        margin_l = 240 if is_brat else 60
-        margin_r = 240 if is_brat else 60
+    # Configure canvas resolution & 1080p Normalization (Matches 360px Browser Preview 1:1)
+    res_x = 1080 if is_portrait else 1920
+    res_y = 1920 if is_portrait else 1080
+    scale_factor = res_x / 360.0  # 3.0 for 1080x1920 portrait
+    margin_l = int(res_x * 0.08)
+    margin_r = int(res_x * 0.08)
 
     # Dynamic Placement configuration (Exact 1:1 Center Anchor with Live Layer)
     place_mode = (placement or "center").lower().strip()
@@ -691,11 +684,10 @@ def build_ass_and_lrc_content(
         back_color = "&H00000000"
         bold_val = b_theme.get("bold", 0)
         scale_x_val = b_theme.get("scale_x", 68)
-        blur_val = 0.0
-        spacing_val = int(spacing) if spacing is not None else -1
+        raw_spacing = int(spacing) if spacing is not None else b_theme.get("spacing", -1)
         strikeout_val = b_theme.get("strikeout", 0)
-        outline_width = b_theme.get("outline_width", 0)
-        shadow_depth = b_theme.get("shadow_depth", 0)
+        outline_width = int(b_theme.get("outline_width", 0) * scale_factor)
+        shadow_depth = int(b_theme.get("shadow_depth", 0) * scale_factor)
         if b_theme.get("font_name"):
             effective_font = b_theme["font_name"]
     else:
@@ -704,14 +696,16 @@ def build_ass_and_lrc_content(
         back_color = tpl.get("back_color", "&H80000000")
         bold_val = tpl.get("bold", -1)
         scale_x_val = tpl.get("scale_x", 100)
-        blur_val = tpl.get("blur", 0.0)
-        spacing_val = int(spacing) if spacing is not None else 0
+        raw_spacing = int(spacing) if spacing is not None else 0
         strikeout_val = 0
-        outline_width = tpl.get("outline_width", 4)
-        shadow_depth = tpl.get("shadow_depth", 3)
+        outline_width = int(tpl.get("outline_width", 4) * scale_factor)
+        shadow_depth = int(tpl.get("shadow_depth", 3) * scale_factor)
 
-    actual_font_size = font_size if font_size and font_size > 0 else (tpl.get("font_size") or 72)
-    w_space_val = int(word_spacing) if word_spacing is not None else 0
+    raw_fs = font_size if font_size and font_size > 0 else (tpl.get("font_size") or 72)
+    actual_font_size = int(raw_fs * scale_factor) if raw_fs <= 140 else int(raw_fs)
+    spacing_val = int(raw_spacing * scale_factor)
+    w_space_val = int((int(word_spacing) if word_spacing is not None else 0) * scale_factor)
+    eff_blur = float((float(blur_amount) if blur_amount is not None else (tpl.get("blur") or 0.0)) * scale_factor)
 
     def apply_word_spacing(txt: str, let_sp: int, wrd_sp: int) -> str:
         if not wrd_sp:

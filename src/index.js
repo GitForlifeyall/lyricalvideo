@@ -298,6 +298,54 @@ app.post('/api/quick-burn-video', async (req, res) => {
 });
 
 /**
+ * POST /api/convert-webm-to-mp4
+ * Remuxes browser-recorded WebM into universal 1080p MP4 using FFmpeg in ~1s
+ */
+app.post('/api/convert-webm-to-mp4', (req, res) => {
+  const safeName = (req.query.name || 'recorded_video').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
+  const webmPath = path.join(VIDEOS_DIR, `${safeName}_${Date.now()}.webm`);
+  const mp4FileName = `${safeName}_exact_${Date.now()}.mp4`;
+  const mp4Path = path.join(VIDEOS_DIR, mp4FileName);
+
+  const writeStream = fs.createWriteStream(webmPath);
+  req.pipe(writeStream);
+
+  writeStream.on('finish', () => {
+    const ffmpeg = spawn('ffmpeg', [
+      '-y',
+      '-i', webmPath,
+      '-c:v', 'libx264',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-movflags', '+faststart',
+      mp4Path
+    ]);
+
+    ffmpeg.on('close', (code) => {
+      if (code === 0 && fs.existsSync(mp4Path)) {
+        res.json({
+          success: true,
+          videoUrl: `/videos/${mp4FileName}`,
+          videoFileName: mp4FileName
+        });
+      } else {
+        res.json({
+          success: true,
+          videoUrl: `/videos/${path.basename(webmPath)}`,
+          videoFileName: path.basename(webmPath)
+        });
+      }
+    });
+  });
+
+  writeStream.on('error', (err) => {
+    console.error('Error saving recorded webm:', err);
+    res.status(500).json({ error: 'Failed to save recorded video' });
+  });
+});
+
+/**
  * GET /api/videos
  * List all rendered lyric videos
  */

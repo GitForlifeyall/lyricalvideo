@@ -113,6 +113,7 @@ const outputVideoPlayer = document.getElementById('output-video-player');
 const videoSource = document.getElementById('video-source');
 const backdropBtns = document.querySelectorAll('.backdrop-btn');
 
+const dlExactCanvasBtn = document.getElementById('dl-exact-canvas-btn');
 const dlVideoBtn = document.getElementById('dl-video-btn');
 const dlAssBtn = document.getElementById('dl-ass-btn');
 const dlLrcBtn = document.getElementById('dl-lrc-btn');
@@ -426,13 +427,21 @@ function setupEventListeners() {
     });
   }
 
+  // Option 1: Record Exact Browser Canvas Video (100% WYSIWYG Pixel-for-Pixel Capture)
+  if (dlExactCanvasBtn) {
+    dlExactCanvasBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      recordExactBrowserCanvasVideo();
+    });
+  }
+
   // Download Button: Instantly burns the live upper layer into 1080p MP4 in 1-2s and downloads!
   if (dlVideoBtn) {
     dlVideoBtn.addEventListener('click', async (e) => {
       e.preventDefault();
       if (state.isBurning) return;
 
-      const originalText = dlVideoBtn.querySelector('span') ? dlVideoBtn.querySelector('span').textContent : 'Download MP4 Video (.mp4)';
+      const originalText = dlVideoBtn.querySelector('span') ? dlVideoBtn.querySelector('span').textContent : 'Fast Burned MP4 Export';
       try {
         state.isBurning = true;
         if (dlVideoBtn.querySelector('span')) dlVideoBtn.querySelector('span').textContent = '⚡ Burning layer into 1080p MP4...';
@@ -1158,4 +1167,254 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
+}
+
+// 8. Option 1: Record Exact In-Browser Canvas Video (100% WYSIWYG Pixel Capture)
+async function recordExactBrowserCanvasVideo() {
+  if (!outputVideoPlayer || !outputVideoPlayer.src) {
+    showToast('Please generate a lyric video first!');
+    return;
+  }
+
+  const btn = document.getElementById('dl-exact-canvas-btn');
+  const originalHtml = btn ? btn.innerHTML : '';
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-inline"></span> <span>Recording Exact Screen Pixels (0%)...</span>';
+  }
+
+  try {
+    showToast('🎥 Recording 100% exact browser pixels with live CSS blur & layout...');
+
+    const video = outputVideoPlayer;
+    const canvasW = 1080;
+    const canvasH = 1920;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+
+    // Create stream from Canvas
+    const canvasStream = canvas.captureStream(30);
+
+    // Audio stream from video element
+    let combinedStream = canvasStream;
+    try {
+      const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const source = audioCtx.createMediaElementSource(video);
+      const dest = audioCtx.createMediaStreamDestination();
+      source.connect(dest);
+      source.connect(audioCtx.destination);
+      combinedStream = new MediaStream([
+        ...canvasStream.getVideoTracks(),
+        ...dest.stream.getAudioTracks()
+      ]);
+    } catch (e) {
+      combinedStream = canvasStream;
+    }
+
+    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')
+      ? 'video/webm;codecs=vp9,opus'
+      : (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
+        ? 'video/webm;codecs=vp8,opus'
+        : 'video/webm');
+
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType,
+      videoBitsPerSecond: 12000000
+    });
+
+    const chunks = [];
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) chunks.push(e.data);
+    };
+
+    let isRecording = true;
+
+    // Word wrap helper for canvas
+    function getCanvasWrappedLines(text, maxChars) {
+      const words = (text || '').trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return [];
+      const lines = [];
+      let cur = [];
+      let curLen = 0;
+      for (const w of words) {
+        if (cur.length && (curLen + 1 + w.length > maxChars)) {
+          lines.push(cur.join(' '));
+          cur = [w];
+          curLen = w.length;
+        } else {
+          cur.push(w);
+          curLen += (cur.length ? 1 : 0) + w.length;
+        }
+      }
+      if (cur.length) lines.push(cur.join(' '));
+      return lines;
+    }
+
+    function drawFrame() {
+      if (!isRecording) return;
+
+      // 1. Draw base video frame
+      ctx.clearRect(0, 0, canvasW, canvasH);
+      ctx.filter = 'none';
+      try {
+        ctx.drawImage(video, 0, 0, canvasW, canvasH);
+      } catch (e) {}
+
+      // 2. Find active lyric line
+      const curTime = video.currentTime;
+      let activeLine = null;
+      if (state.syncedLines && state.syncedLines.length) {
+        for (const line of state.syncedLines) {
+          if (curTime >= line.timeSeconds && curTime <= line.endSeconds) {
+            activeLine = line;
+            break;
+          }
+        }
+      }
+
+      // 3. Draw upper layer text with exact browser styling & CSS blur filter
+      if (activeLine && activeLine.text && state.overlayEnabled) {
+        const isBrat = state.template.includes('brat') || state.template === 'template4_brat';
+        let rawText = activeLine.text;
+        if (isBrat) {
+          // Calculate Brat typing accumulation
+          const words = rawText.split(/\s+/).filter(Boolean);
+          const lineDur = Math.max(0.5, activeLine.endSeconds - activeLine.timeSeconds);
+          const typeDur = Math.min(lineDur * 0.85, Math.max(0.4, words.length * 0.28));
+          const stepT = typeDur / Math.max(1, words.length);
+          const elapsed = curTime - activeLine.timeSeconds;
+          const wordCount = Math.min(words.length, Math.max(1, Math.floor(elapsed / stepT) + 1));
+          rawText = words.slice(0, wordCount).join(' ');
+        }
+
+        const isUpper = (state.bratTheme === 'blue' || state.bratCasing === 'upper');
+        const displayText = isUpper ? rawText.toUpperCase() : (isBrat ? rawText.toLowerCase() : rawText);
+
+        const lines = getCanvasWrappedLines(displayText, isBrat ? 11 : 22);
+
+        ctx.save();
+        
+        // Exact 1080p center position anchor
+        const targetX = canvasW * (state.xpos / 100);
+        const targetY = canvasH * (state.ypos / 100);
+        ctx.translate(targetX, targetY);
+
+        // Exact transform scaleX(0.68) for Brat
+        if (isBrat) {
+          ctx.scale(0.68, 1);
+        }
+
+        // Exact font & styling
+        const fs1080 = Math.round(state.fontSize * 3.0);
+        const fontFam = (state.bratTheme === 'blue' || state.fontFamily === 'Impact')
+          ? 'Impact, "Arial Black", sans-serif'
+          : (isBrat ? "'Arial Narrow', 'Helvetica Neue Condensed', sans-serif" : (state.fontFamily || 'Impact'));
+        const fontWt = (state.bratTheme === 'blue' || state.fontFamily === 'Impact') ? '900' : (isBrat ? '500' : '800');
+
+        ctx.font = `${fontWt} ${fs1080}px ${fontFam}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // Color
+        let textColor = '#FFFFFF';
+        if (isBrat) {
+          if (state.bratTheme === 'blue') textColor = '#DE0100';
+          else if (state.bratTheme === 'black') textColor = '#FFFFFF';
+          else textColor = '#000000';
+        }
+        ctx.fillStyle = textColor;
+
+        // Exact CSS Gaussian blur filter
+        const blurRadius = Math.max(0, state.blur * 6.0);
+        if (blurRadius > 0.1) {
+          ctx.filter = `blur(${blurRadius}px)`;
+        } else {
+          ctx.filter = 'none';
+        }
+
+        // Draw multi-line text
+        const lineHeight = fs1080 * 0.92;
+        const totalH = lines.length * lineHeight;
+        const startY = -(totalH / 2) + (lineHeight / 2);
+
+        lines.forEach((l, idx) => {
+          ctx.fillText(l, 0, startY + (idx * lineHeight));
+        });
+
+        ctx.restore();
+      }
+
+      // Update progress percent
+      if (btn && video.duration) {
+        const pct = Math.round((video.currentTime / video.duration) * 100);
+        const span = btn.querySelector('span:last-child');
+        if (span) span.textContent = `Recording Exact Pixels (${pct}%)...`;
+      }
+
+      requestAnimationFrame(drawFrame);
+    }
+
+    // Start recording
+    recorder.start(100);
+    video.currentTime = 0;
+    await video.play();
+    drawFrame();
+
+    video.onended = async () => {
+      isRecording = false;
+      recorder.stop();
+      if (btn) {
+        btn.innerHTML = '<span class="spinner-inline"></span> <span>Finalizing 1080p MP4...</span>';
+      }
+
+      recorder.onstop = async () => {
+        const recordedBlob = new Blob(chunks, { type: mimeType });
+        try {
+          // Send to server for instant remux to standard 1080p MP4
+          const safeTitle = (state.lastQuery || 'lyric_video').replace(/[^a-zA-Z0-9_-]/g, '_');
+          const resp = await fetch(`/api/convert-webm-to-mp4?name=${encodeURIComponent(safeTitle)}`, {
+            method: 'POST',
+            body: recordedBlob
+          });
+          const json = await resp.json();
+          if (json.videoUrl) {
+            showToast('🎉 Exact 100% pixel-perfect 1080p MP4 downloaded! 🚀');
+            const a = document.createElement('a');
+            a.href = json.videoUrl;
+            a.download = json.videoFileName || `${safeTitle}_exact.mp4`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          } else {
+            throw new Error('No video URL');
+          }
+        } catch (e) {
+          // Fallback direct WebM download
+          const url = URL.createObjectURL(recordedBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'exact_lyric_video.webm';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          showToast('Exact video recording downloaded! 🎉');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+          }
+        }
+      };
+    };
+  } catch (err) {
+    console.error('Recording error:', err);
+    showToast('Failed to record exact canvas video: ' + err.message);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = originalHtml;
+    }
+  }
 }

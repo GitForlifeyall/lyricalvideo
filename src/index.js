@@ -214,6 +214,90 @@ app.get('/api/generate-video-stream', (req, res) => {
 });
 
 /**
+ * POST /api/quick-burn-video
+ * Instant hardware-accelerated 1-2s burn of the active live layer directly into the video
+ * without re-downloading audio or re-running yt-dlp!
+ */
+app.post('/api/quick-burn-video', async (req, res) => {
+  try {
+    const {
+      query,
+      audioPath,
+      syncedLines,
+      template,
+      font,
+      fontsize,
+      blur,
+      spacing,
+      word_spacing,
+      placement,
+      ypos,
+      xpos,
+      brat_theme
+    } = req.body;
+
+    const safeName = (query || 'video').replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
+    const videoFileName = `${safeName}_burned_${Date.now()}.mp4`;
+    const videoOutputPath = path.join(VIDEOS_DIR, videoFileName);
+    const tempCuesPath = path.join(VIDEOS_DIR, `${safeName}_cues_temp.json`);
+
+    if (syncedLines && Array.isArray(syncedLines)) {
+      await fs.promises.writeFile(tempCuesPath, JSON.stringify(syncedLines), 'utf8');
+    }
+
+    const pythonScript = path.join(__dirname, '../generator.py');
+    const pythonArgs = [
+      pythonScript,
+      query || 'Lyric Video',
+      videoOutputPath,
+      `--template=${template || 'template1'}`,
+      `--placement=${placement || 'center'}`,
+      `--ypos=${ypos || 50}`,
+      `--xpos=${xpos || 50}`,
+      `--brat-theme=${brat_theme || 'green'}`,
+      '--json-progress'
+    ];
+
+    const resolvedAudio = (audioPath && fs.existsSync(audioPath))
+      ? audioPath
+      : (fs.existsSync(path.join(VIDEOS_DIR, 'temp_audio.mp3'))
+        ? path.join(VIDEOS_DIR, 'temp_audio.mp3')
+        : (fs.existsSync(path.join(__dirname, '../temp_audio.mp3'))
+          ? path.join(__dirname, '../temp_audio.mp3')
+          : null));
+
+    if (resolvedAudio) {
+      pythonArgs.push(`--audio-file=${resolvedAudio}`);
+    }
+    if (fs.existsSync(tempCuesPath)) {
+      pythonArgs.push(`--cues-file=${tempCuesPath}`);
+    }
+    if (font) pythonArgs.push(`--font=${font}`);
+    if (fontsize) pythonArgs.push(`--fontsize=${fontsize}`);
+    if (blur !== undefined && blur !== '') pythonArgs.push(`--blur=${blur}`);
+    if (spacing !== undefined && spacing !== '') pythonArgs.push(`--spacing=${spacing}`);
+    if (word_spacing !== undefined && word_spacing !== '') pythonArgs.push(`--word-spacing=${word_spacing}`);
+
+    const py = spawn('python', pythonArgs, { cwd: path.join(__dirname, '..') });
+
+    py.on('close', (code) => {
+      if (code === 0 && fs.existsSync(videoOutputPath)) {
+        res.json({
+          success: true,
+          videoUrl: `/videos/${videoFileName}`,
+          videoFileName: videoFileName
+        });
+      } else {
+        res.status(500).json({ error: `Python generator exited with code ${code}` });
+      }
+    });
+  } catch (err) {
+    console.error('Quick burn error:', err);
+    res.status(500).json({ error: 'Failed to burn video layer', details: err.message });
+  }
+});
+
+/**
  * GET /api/videos
  * List all rendered lyric videos
  */

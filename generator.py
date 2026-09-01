@@ -926,7 +926,9 @@ def generate_lyric_video(
     blur_amount: Optional[float] = None,
     spacing: Optional[int] = None,
     word_spacing: Optional[int] = None,
-    clean_base: bool = False
+    clean_base: bool = False,
+    audio_file: Optional[str] = None,
+    cues_file: Optional[str] = None
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
@@ -945,13 +947,39 @@ def generate_lyric_video(
 
     emit_progress("init", 5, f"Initiating Generator with {tpl['name']} ({placement}, Lang: {lang})...")
 
-    yt_data = download_youtube_audio(
-        query_or_url=song_query,
-        output_audio_path=temp_audio_path,
-        target_lang=lang
-    )
-    audio_path = yt_data["audio_path"]
-    duration = yt_data["duration"] or get_audio_duration(audio_path)
+    if audio_file and os.path.exists(audio_file):
+        audio_path = audio_file
+        duration = get_audio_duration(audio_path)
+        cues = []
+        if cues_file and os.path.exists(cues_file):
+            try:
+                with open(cues_file, "r", encoding="utf-8") as cf:
+                    loaded = json.load(cf)
+                    if isinstance(loaded, list):
+                        for item in loaded:
+                            if isinstance(item, dict) and "text" in item:
+                                s_t = float(item.get("timeSeconds", 0.0))
+                                e_t = float(item.get("endSeconds", s_t + 2.5))
+                                cues.append((s_t, e_t, str(item["text"])))
+                            elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                                cues.append((float(item[0]), float(item[1]), str(item[2])))
+            except Exception as e:
+                print(f"[WARN] Error reading cues file: {e}", file=sys.stderr)
+        yt_data = {
+            "audio_path": audio_path,
+            "duration": duration,
+            "cues": cues,
+            "title": song_query,
+            "uploader": "YouTube Video"
+        }
+    else:
+        yt_data = download_youtube_audio(
+            query_or_url=song_query,
+            output_audio_path=temp_audio_path,
+            target_lang=lang
+        )
+        audio_path = yt_data["audio_path"]
+        duration = yt_data["duration"] or get_audio_duration(audio_path)
 
     ass_path, structured_lines, raw_lrc = build_ass_and_lrc_content(
         cues=yt_data["cues"],
@@ -1033,6 +1061,8 @@ if __name__ == "__main__":
     word_spacing = None
     brat_theme = "green"
     clean_base = False
+    audio_file = None
+    cues_file = None
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -1084,6 +1114,10 @@ if __name__ == "__main__":
             brat_theme = a.split("=")[1].strip()
         elif a == "--clean-base" or a.startswith("--clean-base"):
             clean_base = True
+        elif a.startswith("--audio-file="):
+            audio_file = a.split("=")[1].strip()
+        elif a.startswith("--cues-file="):
+            cues_file = a.split("=")[1].strip()
 
     res = generate_lyric_video(
         song_query=query,
@@ -1101,7 +1135,9 @@ if __name__ == "__main__":
         blur_amount=blur,
         spacing=spacing,
         word_spacing=word_spacing,
-        clean_base=clean_base
+        clean_base=clean_base,
+        audio_file=audio_file,
+        cues_file=cues_file
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

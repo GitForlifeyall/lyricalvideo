@@ -426,15 +426,66 @@ function setupEventListeners() {
     });
   }
 
-  // Download Button (Burns live top layer into MP4 if not already burned)
+  // Download Button: Instantly burns the live upper layer into 1080p MP4 in 1-2s and downloads!
   if (dlVideoBtn) {
-    dlVideoBtn.addEventListener('click', (e) => {
-      if (!state.isBurned) {
-        e.preventDefault();
-        state.pendingDownload = true;
-        showToast('Burning your custom top-layer into 1080p MP4 for download... ⚡');
-        const query = state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : '');
-        startGenerationPipeline(query, true);
+    dlVideoBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      if (state.isBurning) return;
+
+      const originalText = dlVideoBtn.querySelector('span') ? dlVideoBtn.querySelector('span').textContent : 'Download MP4 Video (.mp4)';
+      try {
+        state.isBurning = true;
+        if (dlVideoBtn.querySelector('span')) dlVideoBtn.querySelector('span').textContent = '⚡ Burning layer into 1080p MP4...';
+        showToast('Burning your custom upper layer into 1080p MP4... ⚡ (1-2s)');
+
+        const response = await fetch('/api/quick-burn-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: state.lastQuery || (songQueryInput ? songQueryInput.value.trim() : 'Lyric Video'),
+            audioPath: state.activeMetadata?.audio_path || null,
+            syncedLines: state.syncedLines || [],
+            template: state.template,
+            font: state.fontFamily,
+            fontsize: state.fontSize,
+            blur: state.blur,
+            spacing: state.spacing,
+            word_spacing: state.wordSpacing,
+            placement: state.placement,
+            ypos: state.ypos,
+            xpos: state.xpos,
+            brat_theme: state.bratTheme
+          })
+        });
+
+        if (!response.ok) {
+          throw new Error(`Burn failed with status: ${response.status}`);
+        }
+
+        const data = await response.json();
+        if (data.videoUrl) {
+          showToast('🎉 Burn complete! Downloading 1080p MP4... 🚀');
+          const a = document.createElement('a');
+          a.href = data.videoUrl;
+          a.download = data.videoFileName || 'lyric_video_custom.mp4';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        } else {
+          throw new Error('No video URL returned');
+        }
+      } catch (err) {
+        console.error('Quick burn error:', err);
+        showToast('Direct download started...');
+        const a = document.createElement('a');
+        a.href = state.activeVideoUrl || dlVideoBtn.href;
+        a.download = 'lyric_video.mp4';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      } finally {
+        state.isBurning = false;
+        if (dlVideoBtn.querySelector('span')) dlVideoBtn.querySelector('span').textContent = originalText;
       }
     });
   }

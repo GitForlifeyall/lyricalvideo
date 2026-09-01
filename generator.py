@@ -486,8 +486,8 @@ BRAT_THEMES = {
         "font_name": "Impact",
         "bold": -1,
         "scale_x": 100,
-        "outline_width": 4,
-        "shadow_depth": 3,
+        "outline_width": 0,
+        "shadow_depth": 0,
         "uppercase": True,
     },
     "strike": {
@@ -705,7 +705,7 @@ def build_ass_and_lrc_content(
     actual_font_size = int(raw_fs * scale_factor) if raw_fs <= 140 else int(raw_fs)
     spacing_val = int(raw_spacing * scale_factor)
     w_space_val = int((int(word_spacing) if word_spacing is not None else 0) * scale_factor)
-    eff_blur = float((float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else (tpl.get("blur") or 1.8)) * 5.0)
+    eff_blur = float((float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else (tpl.get("blur") or 1.8)) * 8.5)
 
     def apply_word_spacing(txt: str, let_sp: int, wrd_sp: int) -> str:
         if not wrd_sp:
@@ -876,7 +876,7 @@ def render_lyric_video_ffmpeg(
     if ":" in normalized_ass:
         normalized_ass = normalized_ass.replace(":", "\\:")
 
-    eff_blur = float((float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else (tpl.get("blur") or 1.8)) * 5.0)
+    eff_blur = float((float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else (tpl.get("blur") or 1.8)) * 8.5)
     vf_filter = f"ass={normalized_ass}"
 
     if clean_base:

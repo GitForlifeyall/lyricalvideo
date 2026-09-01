@@ -13,8 +13,10 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
+import time
 import requests
 import yt_dlp
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 
 def format_brat_multiline(text: str, max_chars_per_line: int = 15) -> str:
@@ -848,6 +850,194 @@ def get_audio_duration(audio_path: str) -> float:
         return 180.0
 
 
+def get_pillow_font(font_name: str, size: int):
+    font_lower = (font_name or "").lower()
+    candidates = []
+    if "impact" in font_lower:
+        candidates.append("C:/Windows/Fonts/impact.ttf")
+    elif "narrow" in font_lower:
+        candidates.extend(["C:/Windows/Fonts/ARIALN.TTF", "C:/Windows/Fonts/ARIALNB.TTF", "C:/Windows/Fonts/arial.ttf"])
+    candidates.extend([
+        f"C:/Windows/Fonts/{font_lower}.ttf",
+        f"C:/Windows/Fonts/{font_lower}bd.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+        "C:/Windows/Fonts/arialbd.ttf",
+        "C:/Windows/Fonts/segoeui.ttf"
+    ])
+    for c in candidates:
+        if c and os.path.exists(c):
+            try:
+                return ImageFont.truetype(c, size)
+            except Exception:
+                pass
+    return ImageFont.load_default()
+
+
+def render_exact_pillow_overlay_video(
+    cues: List[Tuple[float, float, str]],
+    audio_path: str,
+    output_path: str,
+    duration: float,
+    aspect_ratio: str = "portrait",
+    font_name: str = "Impact",
+    font_size: Optional[int] = None,
+    template_key: str = "template1",
+    placement: str = "center",
+    y_percent: float = 50.0,
+    x_percent: float = 50.0,
+    brat_theme: str = "green",
+    blur_amount: float = 1.8,
+    spacing: Optional[int] = None,
+    word_spacing: Optional[int] = None
+) -> str:
+    """Renders 100% pixel-perfect Gaussian blur and typography using Pillow rasterization and FFmpeg overlay."""
+    is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
+    res_w = 1080 if is_portrait else 1920
+    res_h = 1920 if is_portrait else 1080
+
+    tpl_id = (template_key or "").lower().strip()
+    is_brat = tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]
+
+    if is_brat:
+        b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
+        bg_color = b_theme["bg_color"]
+        fill_color_hex = b_theme.get("hex_text", "#000000")
+        eff_font_name = b_theme.get("font_name", "Arial Narrow")
+        is_upper = (brat_theme == "blue" or b_theme.get("uppercase", False))
+        scale_x = 100 if brat_theme == "blue" else 68
+    else:
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
+        bg_color = tpl.get("bg_color", "black")
+        fill_color_hex = "#FFFFFF"
+        eff_font_name = font_name or "Impact"
+        is_upper = False
+        scale_x = 100
+
+    hex_clean = fill_color_hex.lstrip("#")
+    if len(hex_clean) == 6:
+        r, g, b = int(hex_clean[0:2], 16), int(hex_clean[2:4], 16), int(hex_clean[4:6], 16)
+        fill_rgba = (r, g, b, 255)
+    else:
+        fill_rgba = (255, 255, 255, 255)
+
+    fs_1080 = int((font_size or 72) * 3.0)
+    font = get_pillow_font(eff_font_name, fs_1080)
+    blur_rad = max(0.0, float(blur_amount or 1.8) * 3.5)
+
+    target_x = int(res_w * (float(x_percent or 50.0) / 100.0))
+    target_y = int(res_h * (float(y_percent or 50.0) / 100.0))
+
+    temp_dir = os.path.join(os.path.dirname(output_path), f"temp_cues_{int(time.time()*1000)}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    def wrap_lines(txt, max_chars):
+        words = txt.split()
+        if not words:
+            return []
+        lines = []
+        cur = []
+        cur_l = 0
+        for w in words:
+            w_l = len(w)
+            if cur and (cur_l + 1 + w_l > max_chars):
+                lines.append(" ".join(cur))
+                cur = [w]
+                cur_l = w_l
+            else:
+                cur.append(w)
+                cur_l += (1 if cur else 0) + w_l
+        if cur:
+            lines.append(" ".join(cur))
+        return lines
+
+    inputs = ["ffmpeg", "-y", "-threads", "0", "-f", "lavfi", "-i", f"color=c={bg_color}:s={res_w}x{res_h}:r=30:d={duration:.2f}"]
+    inputs.extend(["-i", audio_path])
+    filter_parts = []
+    prev_label = "0:v"
+
+    valid_cues = []
+    for idx, (s_t, e_t, raw_t) in enumerate(cues):
+        clean_t = raw_t.strip()
+        if not clean_t:
+            continue
+        valid_cues.append((s_t, e_t, clean_t))
+
+    for idx, (s_t, e_t, clean_t) in enumerate(valid_cues):
+        disp_text = clean_t.upper() if is_upper else (clean_t.lower() if is_brat else clean_t)
+        lines = wrap_lines(disp_text, 11 if is_brat else 22)
+        if not lines:
+            continue
+
+        img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+
+        line_h = int(fs_1080 * 0.92)
+        total_h = len(lines) * line_h
+        start_y = int(target_y - (total_h / 2) + (line_h / 2))
+
+        for l_idx, line in enumerate(lines):
+            y = start_y + (l_idx * line_h)
+            draw.text((target_x, y), line, font=font, fill=fill_rgba, anchor="mm", align="center")
+
+        if is_brat and scale_x < 100:
+            bbox = img.getbbox()
+            if bbox:
+                crop = img.crop(bbox)
+                new_w = max(1, int(crop.width * (scale_x / 100.0)))
+                resized = crop.resize((new_w, crop.height), Image.Resampling.BICUBIC)
+                img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+                paste_x = int(target_x - (new_w / 2))
+                paste_y = bbox[1]
+                img.paste(resized, (paste_x, paste_y), resized)
+
+        if blur_rad > 0.1:
+            img = img.filter(ImageFilter.GaussianBlur(radius=blur_rad))
+
+        png_path = os.path.join(temp_dir, f"cue_{idx:04d}.png")
+        img.save(png_path)
+
+        input_idx = idx + 2
+        inputs.extend(["-i", png_path])
+        out_label = f"v{idx+1}" if (idx + 1) < len(valid_cues) else "outv"
+        filter_parts.append(f"[{prev_label}][{input_idx}:v]overlay=0:0:enable='between(t,{s_t:.2f},{e_t:.2f})'[{out_label}]")
+        prev_label = out_label
+
+    if not filter_parts:
+        filter_parts.append("[0:v]copy[outv]")
+
+    fc = ";".join(filter_parts)
+    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+
+    inputs.extend([
+        "-filter_complex", fc,
+        "-map", "[outv]",
+        "-map", "1:a:0",
+        "-c:v", encoder_name,
+    ] + encoder_flags + [
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-shortest",
+        output_path
+    ])
+
+    try:
+        subprocess.run(inputs, check=True)
+    finally:
+        for f in os.listdir(temp_dir):
+            try:
+                os.remove(os.path.join(temp_dir, f))
+            except Exception:
+                pass
+        try:
+            os.rmdir(temp_dir)
+        except Exception:
+            pass
+
+    return output_path
+
+
 def render_lyric_video_ffmpeg(
     audio_path: str,
     ass_path: str,
@@ -1008,17 +1198,50 @@ def generate_lyric_video(
         word_spacing=word_spacing
     )
 
-    render_lyric_video_ffmpeg(
-        audio_path=audio_path,
-        ass_path=ass_path,
-        output_path=output_path,
-        duration=duration,
-        aspect_ratio=effective_aspect,
-        bg_color=bg_color,
-        is_brat=is_brat,
-        blur_amount=blur_amount,
-        clean_base=clean_base
-    )
+    if clean_base:
+        render_lyric_video_ffmpeg(
+            audio_path=audio_path,
+            ass_path=ass_path,
+            output_path=output_path,
+            duration=duration,
+            aspect_ratio=effective_aspect,
+            bg_color=bg_color,
+            is_brat=is_brat,
+            blur_amount=blur_amount,
+            clean_base=True
+        )
+    else:
+        try:
+            render_exact_pillow_overlay_video(
+                cues=yt_data["cues"],
+                audio_path=audio_path,
+                output_path=output_path,
+                duration=duration,
+                aspect_ratio=effective_aspect,
+                font_name=effective_font,
+                font_size=font_size,
+                template_key=template,
+                placement=placement,
+                y_percent=y_percent,
+                x_percent=x_percent,
+                brat_theme=brat_theme,
+                blur_amount=blur_amount or 1.8,
+                spacing=spacing,
+                word_spacing=word_spacing
+            )
+        except Exception as err:
+            print(f"[WARN] Pillow overlay note: {err}. Falling back to ASS render.", file=sys.stderr)
+            render_lyric_video_ffmpeg(
+                audio_path=audio_path,
+                ass_path=ass_path,
+                output_path=output_path,
+                duration=duration,
+                aspect_ratio=effective_aspect,
+                bg_color=bg_color,
+                is_brat=is_brat,
+                blur_amount=blur_amount,
+                clean_base=False
+            )
 
     final_result = {
         "status": "success",

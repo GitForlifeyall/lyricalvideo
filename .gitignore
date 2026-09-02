@@ -13,5 +13,14 @@ temp_audio.mp3
 lyrics.ass
 *.ass
 *.mp3
-public/videos/*.mp4
-output_lyric_video.mp4
+videos/output/*.mp4
+videos/output/*.webm
+videos/output/*.mov
+videos/output/*.mkv
+videos/output/*.avi
+.venv/
+.venv*/
+.vscode/
+.codex/
+headers.txt
+*.xpi

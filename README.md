@@ -36,3 +36,10 @@ cp .env.example .env
 ## 🛣️ Default Endpoints
 - `GET /` - Root status & welcome message
 - `GET /health` - Health check endpoint
+
+## Video folders
+
+- Put background videos in `videos/input/`.
+- Generated lyric videos are saved in `videos/output/`.
+- Temporary files are kept outside the project output folder and cleaned up after each generation.
+- Use the Test Range Start/End controls to render only a short section while testing.

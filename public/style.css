@@ -30,7 +30,7 @@
   --radius-lg: 20px;
   --radius-full: 9999px;
 
-  --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: 'Outfit', 'Segoe UI Emoji', 'Apple Color Emoji', 'Noto Color Emoji', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
   --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
@@ -48,6 +48,7 @@
 
 body {
   font-family: var(--font-sans);
+  font-variant-emoji: emoji;
   background-color: var(--bg-main);
   color: var(--text-primary);
   min-height: 100vh;

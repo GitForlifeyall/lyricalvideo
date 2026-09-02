@@ -20,6 +20,10 @@ const state = {
   xpos: 50,
   bratTheme: 'green',
   bratCasing: 'lower',
+  topHeader: '(When Lyrics feel Too Personal...)',
+  testStart: 0,
+  testEnd: '',
+  previewQuality: 'final',
   lastQuery: 'The Weeknd - Blinding Lights'
 };
 
@@ -43,6 +47,13 @@ const bratLiveText = document.getElementById('brat-live-text');
 const bratSandboxInput = document.getElementById('brat-sandbox-input');
 const bratCasingToggleBtn = document.getElementById('brat-casing-toggle-btn');
 const bratChipBtns = document.querySelectorAll('.brat-chip-btn');
+
+// YT Hindi Type controls
+const ytHindiOptionsRow = document.getElementById('yt-hindi-options-row');
+const ytHindiTopHeaderInput = document.getElementById('yt-hindi-top-header-input');
+const testStartInput = document.getElementById('test-start-input');
+const testEndInput = document.getElementById('test-end-input');
+const previewQualityInput = document.getElementById('preview-quality-input');
 
 // Placement & Size controls
 const placementPills = document.querySelectorAll('#placement-group .placement-pill');
@@ -148,27 +159,54 @@ function setupEventListeners() {
     }
   });
 
-  // Template Selection (Template 1, 2, 3, 4 Brat)
+  // Template Selection
   templatePills.forEach((pill) => {
     pill.addEventListener('click', () => {
       templatePills.forEach(p => p.classList.remove('active'));
       pill.classList.add('active');
       state.template = pill.dataset.template;
 
-      if (pill.dataset.template === 'template4_brat' || pill.dataset.template === 'template_4_brat' || pill.dataset.template === 'brat') {
+      const isBrat = ['template4_brat', 'template_4_brat', 'brat'].includes(state.template);
+      const isYtHindi = state.template === 'yt_hindi_type';
+
+      if (isBrat) {
         if (bratOptionsRow) bratOptionsRow.style.display = 'flex';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'flex';
+        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
         state.fontFamily = 'Arial Narrow';
         fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'Arial Narrow'));
         updateBratText(bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
         showToast('Activated 🟩 Brat Minimal Template (Charli XCX)');
+      } else if (isYtHindi) {
+        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
+        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
+        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'flex';
+        state.fontFamily = 'EB Garamond';
+        state.fontSize = 68;
+        state.blur = 0;
+        fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'EB Garamond'));
+        state.topHeader = ytHindiTopHeaderInput ? ytHindiTopHeaderInput.value : '(When Lyrics feel Too Personal...)';
+        applyRealtimePlacementAndSize();
+        showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
       } else {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
+        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
         showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
       }
     });
   });
+
+  if (testStartInput) testStartInput.addEventListener('input', (e) => { state.testStart = e.target.value; });
+  if (testEndInput) testEndInput.addEventListener('input', (e) => { state.testEnd = e.target.value; });
+  if (previewQualityInput) previewQualityInput.addEventListener('change', (e) => { state.previewQuality = e.target.value; });
+
+  // YT Hindi Top Header input live sync
+  if (ytHindiTopHeaderInput) {
+    ytHindiTopHeaderInput.addEventListener('input', (e) => {
+      state.topHeader = e.target.value;
+    });
+  }
 
   // Brat Palette Swatches
   bratPalettes.forEach((btn) => {
@@ -658,9 +696,10 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
     stageLiveSubtitleText.style.wordSpacing = `${state.wordSpacing}px`;
 
     const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
+    const isYtHindiOverlay = state.template === 'yt_hindi_type';
     if (isBrat) {
       stageLiveSubtitleText.style.fontFamily = "'Arial Narrow', 'Helvetica Neue Condensed', sans-serif";
-      stageLiveSubtitleText.style.fontWeight = '500'; // Exact original medium/regular weight
+      stageLiveSubtitleText.style.fontWeight = '500';
       stageLiveSubtitleText.style.fontStretch = 'condensed';
       stageLiveSubtitleText.style.lineHeight = '0.88';
       stageLiveSubtitleText.style.transform = 'scaleX(0.68)';
@@ -685,6 +724,24 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
         stageLiveSubtitleText.style.color = '#000000';
         stageLiveSubtitleText.style.textShadow = 'none';
       }
+    } else if (isYtHindiOverlay) {
+      // YT Hindi Type: Cormorant Garamond, centered vertically at ~50% of center clip (y≈960/1920 = 50%)
+      stageLiveSubtitleText.style.fontFamily = "'EB Garamond', Georgia, serif";
+      stageLiveSubtitleText.style.fontWeight = '400';
+      stageLiveSubtitleText.style.fontStretch = 'normal';
+      stageLiveSubtitleText.style.lineHeight = '1.25';
+      stageLiveSubtitleText.style.transform = 'none';
+      stageLiveSubtitleText.style.textAlign = 'center';
+      stageLiveSubtitleText.style.textAlignLast = 'center';
+      stageLiveSubtitleText.style.textTransform = 'none';
+      stageLiveSubtitleText.style.color = '#FFFFFF';
+      stageLiveSubtitleText.style.textShadow = '0 1px 8px rgba(0,0,0,0.8)';
+      stageLiveSubtitleText.style.textDecoration = 'none';
+      // Keep overlay positioned at vertical center of center video clip
+      if (stageLiveSubtitleOverlay) {
+        stageLiveSubtitleOverlay.style.top = '50%';
+        stageLiveSubtitleOverlay.style.transform = 'translateY(-50%)';
+      }
     } else {
       stageLiveSubtitleText.style.fontFamily = state.fontFamily || 'Impact';
       stageLiveSubtitleText.style.fontWeight = (state.template === 'template1' || state.fontFamily === 'Impact') ? '800' : '600';
@@ -696,7 +753,8 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
       stageLiveSubtitleText.style.textShadow = '0 2px 10px rgba(0,0,0,0.95), 0 0 5px #000000';
     }
 
-    if (state.overlayEnabled) {
+    const mergedYtHindiOutput = state.template === 'yt_hindi_type' && state.activeMetadata?.template === 'yt_hindi_type';
+    if (state.overlayEnabled && !mergedYtHindiOutput) {
       stageLiveSubtitleOverlay.style.display = 'flex';
     } else {
       stageLiveSubtitleOverlay.style.display = 'none';
@@ -760,10 +818,16 @@ function startGenerationPipeline(query, burnText = false) {
   pipelineSection.style.display = 'block';
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Connect to SSE Endpoint with template, font, fontsize, blur, spacing, word_spacing, language, placement, ypos, xpos, brat_theme, and burn_text
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}`;
+  // Connect to SSE Endpoint
+  const isYtHindi = state.template === 'yt_hindi_type';
+  const topHeaderParam = isYtHindi ? `&top_header=${encodeURIComponent(state.topHeader || '')}` : '';
+  const testStartParam = Number(state.testStart) > 0 ? `&start_seconds=${encodeURIComponent(state.testStart)}` : '';
+  const testEndParam = Number(state.testEnd) > 0 ? `&end_seconds=${encodeURIComponent(state.testEnd)}` : '';
+  const qualityParam = `&preview_quality=${encodeURIComponent(state.previewQuality || 'final')}`;
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}${topHeaderParam}${testStartParam}${testEndParam}${qualityParam}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
+  state.generationErrorHandled = false;
 
   eventSource.addEventListener('start', (e) => {
     const data = JSON.parse(e.data);
@@ -796,6 +860,8 @@ function startGenerationPipeline(query, burnText = false) {
   });
 
   const handleError = (e) => {
+    if (state.generationErrorHandled) return;
+    state.generationErrorHandled = true;
     console.error('SSE Error:', e);
     appendConsoleLog('[ERROR] Video generation pipeline failed or connection closed.');
     pipelineStatusText.textContent = 'Generation Failed (Check console output)';
@@ -830,6 +896,13 @@ function handleProgressUpdate(data) {
   pipelineStatusText.textContent = message;
 
   appendConsoleLog(`[${percent}%] ${message}`);
+  if (details && Object.keys(details).length) {
+    const detailText = Object.entries(details)
+      .filter(([key]) => !['title', 'uploader'].includes(key))
+      .map(([key, value]) => `${key}=${typeof value === 'object' ? JSON.stringify(value) : value}`)
+      .join(' | ');
+    if (detailText) appendConsoleLog(`[DETAIL] ${detailText}`);
+  }
 
   // Step-specific updates
   if (step === 'ytdlp_start' || step === 'ytdlp_downloading') {
@@ -861,6 +934,7 @@ function handleGenerationComplete(data, isBurned = false) {
   state.activeMetadata = data.metadata;
   state.syncedLines = data.metadata?.syncedLines || [];
   state.isBurned = isBurned;
+  const isMergedYtHindi = data.metadata?.template === 'yt_hindi_type';
 
   showToast(isBurned ? 'Burned 1080p MP4 Ready! 🚀' : 'Clean Base Video Ready! Tune Live Layer ⚡');
 
@@ -891,7 +965,7 @@ function handleGenerationComplete(data, isBurned = false) {
 
   // Ensure real-time interactive text overlay is visible over the clean base video
   if (stageLiveSubtitleOverlay) {
-    stageLiveSubtitleOverlay.style.display = state.overlayEnabled ? 'flex' : 'none';
+    stageLiveSubtitleOverlay.style.display = isMergedYtHindi ? 'none' : (state.overlayEnabled ? 'flex' : 'none');
   }
   applyRealtimePlacementAndSize(false);
 

@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
@@ -12,11 +13,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const LYRICS_DIR = path.join(__dirname, '../lyrics');
-const VIDEOS_DIR = path.join(__dirname, '../public/videos');
+const ROOT_DIR = path.join(__dirname, '..');
+const VIDEO_INPUT_DIR = path.join(ROOT_DIR, 'videos', 'input');
+const VIDEO_OUTPUT_DIR = path.join(ROOT_DIR, 'videos', 'output');
 
 // Ensure directories exist
 if (!fs.existsSync(LYRICS_DIR)) fs.mkdirSync(LYRICS_DIR, { recursive: true });
-if (!fs.existsSync(VIDEOS_DIR)) fs.mkdirSync(VIDEOS_DIR, { recursive: true });
+if (!fs.existsSync(VIDEO_INPUT_DIR)) fs.mkdirSync(VIDEO_INPUT_DIR, { recursive: true });
+if (!fs.existsSync(VIDEO_OUTPUT_DIR)) fs.mkdirSync(VIDEO_OUTPUT_DIR, { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -34,7 +38,7 @@ app.use(express.urlencoded({ extended: true }));
 // Serve static frontend assets and directories
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/lyrics', express.static(LYRICS_DIR));
-app.use('/videos', express.static(VIDEOS_DIR));
+app.use('/videos', express.static(VIDEO_OUTPUT_DIR));
 
 /**
  * Utility: Parse raw LRC text into structured timestamps JSON
@@ -82,7 +86,7 @@ app.get('/health', (req, res) => {
  * Server-Sent Events (SSE) streaming endpoint that runs generator.py in Python
  * and delivers real-time progress events to the frontend.
  */
-app.get('/api/generate-video-stream', (req, res) => {
+app.get('/api/generate-video-stream', async (req, res) => {
   const query = req.query.q;
   if (!query) {
     return res.status(400).json({ error: 'Query parameter "q" is required' });
@@ -102,9 +106,10 @@ app.get('/api/generate-video-stream', (req, res) => {
 
   const safeName = query.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 50);
   const videoFileName = `${safeName}_${Date.now()}.mp4`;
-  const videoOutputPath = path.join(VIDEOS_DIR, videoFileName);
-  const tempAudioPath = path.join(VIDEOS_DIR, `${safeName}_temp.mp3`);
-  const tempAssPath = path.join(VIDEOS_DIR, `${safeName}_temp.ass`);
+  const videoOutputPath = path.join(VIDEO_OUTPUT_DIR, videoFileName);
+  const tempWorkDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'lyricalvideo-'));
+  const tempAudioPath = path.join(tempWorkDir, `${safeName}_temp.mp3`);
+  const tempAssPath = path.join(tempWorkDir, `${safeName}_temp.ass`);
 
   const offset = req.query.offset || '0.0';
   const template = req.query.template || 'template1';
@@ -118,6 +123,10 @@ app.get('/api/generate-video-stream', (req, res) => {
   const blur = req.query.blur || '';
   const spacing = req.query.spacing || '';
   const wordSpacing = req.query.word_spacing || '';
+  const topHeader = req.query.top_header || '';
+  const startSeconds = req.query.start_seconds || '';
+  const endSeconds = req.query.end_seconds || '';
+  const previewQuality = req.query.preview_quality || 'final';
 
   const burnText = req.query.burn_text === 'true';
 
@@ -153,6 +162,16 @@ app.get('/api/generate-video-stream', (req, res) => {
   if (wordSpacing !== '') {
     pythonArgs.push(`--word-spacing=${wordSpacing}`);
   }
+  if (topHeader) {
+    pythonArgs.push(`--top-header=${topHeader}`);
+  }
+  if (startSeconds !== '') {
+    pythonArgs.push(`--start-seconds=${startSeconds}`);
+  }
+  if (endSeconds !== '') {
+    pythonArgs.push(`--end-seconds=${endSeconds}`);
+  }
+  pythonArgs.push(`--preview-quality=${previewQuality}`);
 
   const pythonProcess = spawn('python', pythonArgs, {
     cwd: path.join(__dirname, '..')
@@ -189,7 +208,7 @@ app.get('/api/generate-video-stream', (req, res) => {
     }
   });
 
-  pythonProcess.on('close', (code) => {
+  pythonProcess.on('close', async (code) => {
     if (code === 0) {
       const responseData = {
         status: 'success',
@@ -205,6 +224,7 @@ app.get('/api/generate-video-stream', (req, res) => {
     } else {
       sendSSE('error', { error: `Python generator exited with code ${code}` });
     }
+    await fs.promises.rm(tempWorkDir, { recursive: true, force: true }).catch(() => {});
     res.end();
   });
 
@@ -371,16 +391,16 @@ app.post('/api/convert-webm-to-mp4', (req, res) => {
  */
 app.get('/api/videos', async (req, res) => {
   try {
-    if (!fs.existsSync(VIDEOS_DIR)) {
+    if (!fs.existsSync(VIDEO_OUTPUT_DIR)) {
       return res.json({ total: 0, videos: [] });
     }
 
-    const files = await fs.promises.readdir(VIDEOS_DIR);
+    const files = await fs.promises.readdir(VIDEO_OUTPUT_DIR);
     const videoFiles = files.filter(f => f.endsWith('.mp4') || f.endsWith('.webm'));
 
     const list = await Promise.all(
       videoFiles.map(async (filename) => {
-        const stat = await fs.promises.stat(path.join(VIDEOS_DIR, filename));
+        const stat = await fs.promises.stat(path.join(VIDEO_OUTPUT_DIR, filename));
         return {
           filename,
           url: `/videos/${filename}`,
@@ -398,6 +418,41 @@ app.get('/api/videos', async (req, res) => {
     console.error('Error listing videos:', err);
     return res.status(500).json({ error: 'Failed to list videos' });
   }
+});
+
+/**
+ * GET /api/background-videos
+ * Lists user-provided background video files from videos/input/.
+ * Does NOT generate any video files.
+ */
+app.get('/api/background-videos', (req, res) => {
+  const searchDirs = [VIDEO_INPUT_DIR];
+
+  const videoExtensions = ['.mp4', '.mov', '.mkv', '.webm', '.avi'];
+  const found = [];
+  const seenNames = new Set();
+
+  for (const dir of searchDirs) {
+    if (!fs.existsSync(dir)) continue;
+    try {
+      const files = fs.readdirSync(dir);
+      for (const file of files) {
+        const ext = path.extname(file).toLowerCase();
+        if (videoExtensions.includes(ext) && !seenNames.has(file)) {
+          seenNames.add(file);
+          const fullPath = path.join(dir, file);
+          const stat = fs.statSync(fullPath);
+          found.push({
+            filename: file,
+            folder: path.relative(ROOT_DIR, dir),
+            sizeMb: (stat.size / (1024 * 1024)).toFixed(2)
+          });
+        }
+      }
+    } catch (e) { /* skip unreadable dirs */ }
+  }
+
+  res.json({ total: found.length, videos: found });
 });
 
 /**

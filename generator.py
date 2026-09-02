@@ -1319,6 +1319,24 @@ def get_top_header_text(user_header: Optional[str] = None) -> str:
     return "When Lyrics Feel Too Personal... 🤌🤍"
 
 
+def get_intro_header_text(user_intro: Optional[str] = None) -> str:
+    """Read intro text from user input or pick a random line from intro_headers.txt."""
+    if user_intro and user_intro.strip():
+        cleaned = user_intro.strip()
+        if cleaned.lower() not in ("default", "none", "null"):
+            return cleaned
+    intro_file = os.path.join(os.path.dirname(__file__), "intro_headers.txt")
+    if os.path.exists(intro_file):
+        try:
+            with open(intro_file, "r", encoding="utf-8") as f:
+                lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
+                if lines:
+                    return random.choice(lines)
+        except Exception:
+            pass
+    return "Wear headphones for the best experience 🎧✨"
+
+
 
 def get_all_background_videos() -> List[str]:
     """Retrieve all background video clips from videos/input/."""
@@ -1425,6 +1443,99 @@ def create_header_overlay_image(
                     pass
             else:
                 print(f"[Emoji Info] Missing local asset for {t_val} (hex: {hex_code})")
+            curr_x += w
+
+    img.save(output_png_path, "PNG")
+    return output_png_path
+
+
+def create_intro_overlay_image(
+    intro_text: str,
+    canvas_width: int = 1080,
+    canvas_height: int = 1920,
+    output_png_path: str = "intro_overlay.png"
+) -> str:
+    """
+    Renders centered intro text with inline Apple emojis centered on the canvas.
+    """
+    img = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
+    if not intro_text or not intro_text.strip():
+        img.save(output_png_path, "PNG")
+        return output_png_path
+
+    draw = ImageDraw.Draw(img)
+    scale = canvas_width / 1080.0
+    font_size = int(36 * scale)
+    font_paths = [
+        "C:/Windows/Fonts/georgiai.ttf",
+        "C:/Windows/Fonts/georgia.ttf",
+        os.path.join(os.path.dirname(__file__), "fonts", "CormorantGaramond-Italic.ttf"),
+        os.path.join(os.path.dirname(__file__), "fonts", "EBGaramond-Variable.ttf")
+    ]
+    font = None
+    for fp in font_paths:
+        if os.path.exists(fp):
+            try:
+                font = ImageFont.truetype(fp, font_size)
+                break
+            except Exception:
+                continue
+    if font is None:
+        font = ImageFont.load_default()
+
+    emoji_pattern = re.compile(
+        r'([𐀀-􏿿][︀-️]?|[☀-➿][︀-️]?|❤[︀-️]?)'
+    )
+    tokens = []
+    last_idx = 0
+    for m in emoji_pattern.finditer(intro_text):
+        if m.start() > last_idx:
+            txt_part = re.sub(r'[︀-️]', '', intro_text[last_idx:m.start()])
+            if txt_part:
+                tokens.append(("text", txt_part))
+        tokens.append(("emoji", m.group()))
+        last_idx = m.end()
+    if last_idx < len(intro_text):
+        txt_part = re.sub(r'[︀-️]', '', intro_text[last_idx:])
+        if txt_part:
+            tokens.append(("text", txt_part))
+
+    emoji_size = int(font_size * 1.1)
+    measured_tokens = []
+    total_w = 0
+    for t_type, t_val in tokens:
+        if t_type == "text":
+            bbox = draw.textbbox((0, 0), t_val, font=font)
+            w = bbox[2] - bbox[0]
+            measured_tokens.append((t_type, t_val, w))
+            total_w += w
+        else:
+            w = emoji_size + int(6 * scale)
+            measured_tokens.append((t_type, t_val, w))
+            total_w += w
+
+    start_x = max(10, (canvas_width - total_w) // 2)
+    y_pos = int((canvas_height - font_size) // 2)
+
+    curr_x = start_x
+    for t_type, t_val, w in measured_tokens:
+        if t_type == "text":
+            draw.text((curr_x, y_pos), t_val, font=font, fill=(255, 255, 255, 245))
+            curr_x += w
+        else:
+            hex_code = "-".join(f"{ord(c):x}" for c in t_val if ord(c) != 0xfe0f).lower()
+            png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code}.png")
+            if not os.path.exists(png_path):
+                hex_code_single = f"{ord(t_val[0]):x}".lower()
+                png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code_single}.png")
+            if os.path.exists(png_path):
+                try:
+                    emoji_img = Image.open(png_path).convert("RGBA")
+                    emoji_img = emoji_img.resize((emoji_size, emoji_size), Image.Resampling.LANCZOS)
+                    emoji_y = y_pos - int(2 * scale)
+                    img.paste(emoji_img, (curr_x, emoji_y), emoji_img)
+                except Exception:
+                    pass
             curr_x += w
 
     img.save(output_png_path, "PNG")
@@ -2114,6 +2225,7 @@ def render_yt_hindi_video_ffmpeg(
     end_seconds: Optional[float] = None,
     cues: Optional[List[Any]] = None,
     film_burn_intro: bool = False,
+    intro_header: Optional[str] = None,
 ) -> str:
     """
     Renders complete YT Hindi Type video where:
@@ -2144,6 +2256,20 @@ def render_yt_hindi_video_ffmpeg(
         top_margin_height=top_margin,
         output_png_path=header_png
     )
+
+    intro_png = None
+    burn_dur = 3.0
+    if film_burn_intro:
+        first_lyric_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 3.0)
+        burn_dur = min(4.0, first_lyric_start) if first_lyric_start >= 2.0 else 3.0
+        intro_text = get_intro_header_text(intro_header)
+        intro_png = os.path.join(temp_dir, f"intro_{int(time.time()*1000)}.png")
+        create_intro_overlay_image(
+            intro_text=intro_text,
+            canvas_width=res_w,
+            canvas_height=res_h,
+            output_png_path=intro_png
+        )
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -2237,9 +2363,11 @@ def render_yt_hindi_video_ffmpeg(
 
         # Generate lyric text PNG overlay for each segment (strictly scaled to never exceed 82% video width)
         for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
+            # During intro window of film_burn_intro, do NOT show any lyric text
+            eff_text = "" if (film_burn_intro and seg_start < burn_dur) else seg_text
             png_path = os.path.join(temp_dir, f"lyric_seg_{int(time.time()*1000)}_{i}.png")
             create_lyric_line_overlay_image(
-                text=seg_text,
+                text=eff_text,
                 rect_w=rect_w,
                 rect_h=rect_h,
                 font_name="EB Garamond",
@@ -2285,17 +2413,43 @@ def render_yt_hindi_video_ffmpeg(
         filter_parts.append(f"{concat_inputs}concat=n={num_segments}:v=1:a=0[bg_rect];")
         filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[canvas];")
 
-        hdr_idx = 2 * num_segments
-        audio_idx = 2 * num_segments + 1
+        if film_burn_intro and intro_png:
+            hdr_idx = 2 * num_segments
+            intro_idx = 2 * num_segments + 1
+            audio_idx = 2 * num_segments + 2
 
-        if film_burn_intro:
-            burn_dur = min(3.0, timeline_segments[0][1] if timeline_segments else 3.0)
+            # Apply procedural film burn to canvas (no red or white lines)
             burn_filter_str, _ = generate_film_burn_filters(intro_duration=burn_dur)
-            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s)")
+            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s) with intro text")
             filter_parts.append(f"[canvas]{burn_filter_str}[burned];")
-            filter_parts.append(f"[burned][{hdr_idx}:v]overlay=0:0[v_out]")
+
+            # Intro text with smooth fade in and fade out (loop static image continuously)
+            fade_in_d = min(0.5, burn_dur / 3.0)
+            fade_out_st = max(0.4, burn_dur - 0.6)
+            fade_out_d = min(0.5, burn_dur - fade_out_st)
+            filter_parts.append(
+                f"[{intro_idx}:v]format=rgba,loop=-1:1:0,fade=t=in:st=0.25:d={fade_in_d:.3f}:alpha=1,"
+                f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.3f}:alpha=1[intro_txt];"
+            )
+            # Overlay intro text on burned canvas strictly during intro window
+            filter_parts.append(
+                f"[burned][intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[with_intro];"
+            )
+
+            # Top header: hidden during intro, smoothly fades in only after intro ends
+            filter_parts.append(
+                f"[{hdr_idx}:v]format=rgba,loop=-1:1:0,fade=t=in:st={burn_dur:.3f}:d=0.42:alpha=1[faded_hdr];"
+            )
+            filter_parts.append(
+                f"[with_intro][faded_hdr]overlay=0:0:enable='gte(t,{burn_dur:.3f})'[v_out]"
+            )
+
+            extra_image_inputs = ["-i", header_png, "-i", intro_png]
         else:
+            hdr_idx = 2 * num_segments
+            audio_idx = 2 * num_segments + 1
             filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
+            extra_image_inputs = ["-i", header_png]
 
         filter_complex = "".join(filter_parts)
 
@@ -2303,7 +2457,8 @@ def render_yt_hindi_video_ffmpeg(
             ["ffmpeg", "-y", "-threads", "0"] +
             video_inputs +
             png_inputs +
-            ["-i", header_png, "-i", audio_path] +
+            extra_image_inputs +
+            ["-i", audio_path] +
             ["-filter_complex", filter_complex] +
             ["-map", "[v_out]", "-map", f"{audio_idx}:a"] +
             ["-t", f"{duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
@@ -2384,7 +2539,8 @@ def generate_lyric_video(
     audio_file: Optional[str] = None,
     cues_file: Optional[str] = None,
     top_header: Optional[str] = None,
-    preview_quality: str = "final"
+    preview_quality: str = "final",
+    intro_header: Optional[str] = None
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
@@ -2518,7 +2674,8 @@ def generate_lyric_video(
             start_seconds=test_start,
             end_seconds=test_end,
             cues=structured_lines,
-            film_burn_intro=(tpl_id == "yt_hindi_intro")
+            film_burn_intro=(tpl_id == "yt_hindi_intro"),
+            intro_header=intro_header
         )
 
     elif clean_base:
@@ -2621,6 +2778,7 @@ if __name__ == "__main__":
     audio_file = None
     cues_file = None
     top_header = None
+    intro_header = None
     preview_quality = "final"
 
     for a in sys.argv[1:]:
@@ -2689,6 +2847,8 @@ if __name__ == "__main__":
             cues_file = a.split("=")[1].strip()
         elif a.startswith("--top-header="):
             top_header = a.split("=")[1].strip()
+        elif a.startswith("--intro-header="):
+            intro_header = a.split("=")[1].strip()
         elif a.startswith("--preview-quality="):
             preview_quality = a.split("=")[1].strip()
 
@@ -2714,7 +2874,8 @@ if __name__ == "__main__":
         audio_file=audio_file,
         cues_file=cues_file,
         top_header=top_header,
-        preview_quality=preview_quality
+        preview_quality=preview_quality,
+        intro_header=intro_header
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

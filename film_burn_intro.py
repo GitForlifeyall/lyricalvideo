@@ -143,15 +143,7 @@ def generate_film_burn_filters(intro_duration: float = INTRO_DURATION) -> Tuple[
 
         # d. Analog Film Grain (noise):
         # Temporal film celluloid noise with unique seed per export
-        f"noise=alls={noise_strength}:allf=t+u:all_seed={noise_seed}:enable='{scope}'",
-
-        # e. Horizontal Red Glitch Lines (drawbox):
-        # Intermittent horizontal flash lines
-        f"drawbox=x=0:y='random(1)*ih':w=iw:h={glitch_h}:color=red@{glitch_opacity}:t=fill:enable='{scope}*gt(random(2),{glitch_thresh})'",
-
-        # f. Vertical Hairline Scratches (drawbox):
-        # Fine vertical celluloid scratch lines jumping horizontally
-        f"drawbox=x='random(3)*iw':y=0:w=1:h=ih:color=white@{scratch_opacity}:t=fill:enable='{scope}*gt(random(4),{scratch_thresh})'"
+        f"noise=alls={noise_strength}:allf=t+u:all_seed={noise_seed}:enable='{scope}'"
     ]
 
     random_params = {
@@ -163,8 +155,6 @@ def generate_film_burn_filters(intro_duration: float = INTRO_DURATION) -> Tuple[
         "color_temp": f"R:{red_gain} G:{green_gain} B:{blue_gain} (Amber:{amber_mix})",
         "noise_seed": noise_seed,
         "noise_strength": noise_strength,
-        "glitch_lines": f"{glitch_h}px @ {glitch_opacity} (thresh: {glitch_thresh})",
-        "scratches": f"1px @ {scratch_opacity} (thresh: {scratch_thresh})",
         "gate_weave_jitter": f"±{jitter_px}px @ {jitter_speed} rad/s"
     }
 

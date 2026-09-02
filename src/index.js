@@ -134,6 +134,7 @@ app.get('/api/generate-video-stream', async (req, res) => {
   const spacing = req.query.spacing || '';
   const wordSpacing = req.query.word_spacing || '';
   const topHeader = req.query.top_header || '';
+  const introHeader = req.query.intro_header || '';
   const startSeconds = req.query.start_seconds || '';
   const endSeconds = req.query.end_seconds || '';
   const previewQuality = req.query.preview_quality || 'final';
@@ -174,6 +175,9 @@ app.get('/api/generate-video-stream', async (req, res) => {
   }
   if (topHeader) {
     pythonArgs.push(`--top-header=${topHeader}`);
+  }
+  if (introHeader) {
+    pythonArgs.push(`--intro-header=${introHeader}`);
   }
   if (startSeconds !== '') {
     pythonArgs.push(`--start-seconds=${startSeconds}`);

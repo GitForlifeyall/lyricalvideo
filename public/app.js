@@ -21,6 +21,7 @@ const state = {
   bratTheme: 'green',
   bratCasing: 'lower',
   topHeader: '',
+  introHeader: '',
   testStart: 0,
   testEnd: '',
   previewQuality: 'final',
@@ -52,6 +53,8 @@ const bratChipBtns = document.querySelectorAll('.brat-chip-btn');
 // YT Hindi Type controls
 const ytHindiOptionsRow = document.getElementById('yt-hindi-options-row');
 const ytHindiTopHeaderInput = document.getElementById('yt-hindi-top-header-input');
+const ytHindiIntroOptionsRow = document.getElementById('yt-hindi-intro-options-row');
+const ytHindiIntroTextInput = document.getElementById('yt-hindi-intro-text-input');
 const testStartInput = document.getElementById('test-start-input');
 const testEndInput = document.getElementById('test-end-input');
 const previewQualityInput = document.getElementById('preview-quality-input');
@@ -182,6 +185,7 @@ function setupEventListeners() {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
         if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'flex';
+        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = (state.template === 'yt_hindi_intro') ? 'flex' : 'none';
         state.fontFamily = 'EB Garamond';
         state.fontSize = 68;
         state.blur = 0;
@@ -197,6 +201,7 @@ function setupEventListeners() {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
         if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
+        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
         showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
       }
     });
@@ -210,6 +215,13 @@ function setupEventListeners() {
   if (ytHindiTopHeaderInput) {
     ytHindiTopHeaderInput.addEventListener('input', (e) => {
       state.topHeader = e.target.value;
+    });
+  }
+
+  // YT Hindi Intro Text input live sync
+  if (ytHindiIntroTextInput) {
+    ytHindiIntroTextInput.addEventListener('input', (e) => {
+      state.introHeader = e.target.value;
     });
   }
 
@@ -850,11 +862,13 @@ function startGenerationPipeline(query, burnText = false) {
 
   // Connect to SSE Endpoint
   const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
+  const isYtHindiIntro = state.template === 'yt_hindi_intro';
   const topHeaderParam = isYtHindi ? `&top_header=${encodeURIComponent(state.topHeader || '')}` : '';
+  const introHeaderParam = isYtHindiIntro ? `&intro_header=${encodeURIComponent(state.introHeader || '')}` : '';
   const testStartParam = Number(state.testStart) > 0 ? `&start_seconds=${encodeURIComponent(state.testStart)}` : '';
   const testEndParam = Number(state.testEnd) > 0 ? `&end_seconds=${encodeURIComponent(state.testEnd)}` : '';
   const qualityParam = `&preview_quality=${encodeURIComponent(state.previewQuality || 'final')}`;
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}${topHeaderParam}${testStartParam}${testEndParam}${qualityParam}`;
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}${topHeaderParam}${introHeaderParam}${testStartParam}${testEndParam}${qualityParam}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
   state.generationErrorHandled = false;

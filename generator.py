@@ -2683,6 +2683,7 @@ def generate_lyric_video(
 
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
+    trimmed_audio = None
 
     emit_progress("init", 5, f"Initiating Generator with {tpl['name']} ({placement}, Lang: {lang})...")
 
@@ -2872,6 +2873,13 @@ def generate_lyric_video(
         "syncedLines": structured_lines,
         "rawLrc": raw_lrc
     }
+
+    # Automatically clean up temporary trimmed audio files
+    if trimmed_audio and os.path.exists(trimmed_audio):
+        try:
+            os.remove(trimmed_audio)
+        except Exception:
+            pass
 
     emit_progress("completed", 100, f"🎉 1080p MP4 ready using {tpl['name']} ({placement.upper()})!", final_result)
     return final_result

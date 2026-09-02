@@ -726,7 +726,7 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
     stageLiveSubtitleText.style.wordSpacing = `${state.wordSpacing}px`;
 
     const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
-    const isYtHindiOverlay = state.template === 'yt_hindi_type';
+    const isYtHindiOverlay = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
     if (isBrat) {
       stageLiveSubtitleText.style.fontFamily = "'Arial Narrow', 'Helvetica Neue Condensed', sans-serif";
       stageLiveSubtitleText.style.fontWeight = '500';
@@ -783,7 +783,7 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
       stageLiveSubtitleText.style.textShadow = '0 2px 10px rgba(0,0,0,0.95), 0 0 5px #000000';
     }
 
-    const mergedYtHindiOutput = state.template === 'yt_hindi_type' && state.activeMetadata?.template === 'yt_hindi_type';
+    const mergedYtHindiOutput = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro'].includes(state.activeMetadata?.template);
     if (state.overlayEnabled && !mergedYtHindiOutput) {
       stageLiveSubtitleOverlay.style.display = 'flex';
     } else {
@@ -964,7 +964,7 @@ function handleGenerationComplete(data, isBurned = false) {
   state.activeMetadata = data.metadata;
   state.syncedLines = data.metadata?.syncedLines || [];
   state.isBurned = isBurned;
-  const isMergedYtHindi = data.metadata?.template === 'yt_hindi_type';
+  const isMergedYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(data.metadata?.template) || ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
 
   showToast(isBurned ? 'Burned 1080p MP4 Ready! 🚀' : 'Clean Base Video Ready! Tune Live Layer ⚡');
 
@@ -1104,7 +1104,8 @@ function syncTeleprompter(currentTime) {
     const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
     
     // Real-Time Lyric Rendering directly on the Interactive Video Layer
-    if (stageLiveSubtitleText && state.overlayEnabled && activeLine && activeLine.text) {
+    const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro'].includes(state.activeMetadata?.template);
+    if (!isYtHindi && stageLiveSubtitleText && state.overlayEnabled && activeLine && activeLine.text) {
       if (isBrat) {
         const words = activeLine.text.trim().split(/\s+/).filter(Boolean);
         if (words.length > 0) {

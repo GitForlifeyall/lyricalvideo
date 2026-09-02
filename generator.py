@@ -12,6 +12,7 @@ import glob
 import random
 import math
 import textwrap
+import tempfile
 
 import subprocess
 from pathlib import Path
@@ -24,6 +25,78 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 from film_burn_intro import generate_film_burn_filters
 
 YT_HINDI_TRANSITION_SECONDS = 0.42
+
+
+def detect_tempo_transition_seconds(audio_path: str) -> float:
+    """Return a tempo-sensitive transition duration for YT Hindi Type.
+
+    Faster songs receive shorter transitions; slower songs receive longer
+    transitions. The bounds prevent extreme BPM estimates from producing
+    distracting cuts or transitions longer than a lyric segment.
+    """
+    analysis_path = audio_path
+    temporary_wav = None
+    try:
+        import aubio
+
+        # The Windows aubio wheel's source reader is WAV-only. Convert a
+        # temporary mono copy so MP3/M4A inputs work consistently.
+        if Path(audio_path).suffix.lower() != ".wav":
+            temporary_wav = os.path.join(
+                tempfile.gettempdir(),
+                f"lyric_aubio_{os.getpid()}_{int(time.time() * 1000)}.wav",
+            )
+            conversion = subprocess.run(
+                [
+                    "ffmpeg", "-y", "-i", audio_path, "-vn", "-ac", "1",
+                    "-ar", "44100", "-c:a", "pcm_s16le", temporary_wav,
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            if conversion.returncode != 0 or not os.path.exists(temporary_wav):
+                raise RuntimeError("FFmpeg could not prepare audio for aubio")
+            analysis_path = temporary_wav
+
+        win_size = 1024
+        hop_size = 512
+        source = aubio.source(analysis_path, 0, hop_size)
+        tempo = aubio.tempo("specdiff", win_size, hop_size, source.samplerate)
+        beat_times = []
+        while True:
+            samples, read = source()
+            if tempo(samples):
+                beat_times.append(float(tempo.get_last_s()))
+            if read < hop_size:
+                break
+
+        bpm = float(tempo.get_bpm() or 0.0)
+        if len(beat_times) >= 4:
+            intervals = [
+                beat_times[index] - beat_times[index - 1]
+                for index in range(1, len(beat_times))
+                if beat_times[index] > beat_times[index - 1]
+            ]
+            if intervals:
+                intervals.sort()
+                bpm = 60.0 / intervals[len(intervals) // 2]
+
+        if not 40.0 <= bpm <= 220.0:
+            raise ValueError(f"unreliable BPM estimate: {bpm:.1f}")
+
+        # 0.42s at 100 BPM; faster tempo => shorter transition.
+        transition = 0.42 * (100.0 / bpm)
+        return max(0.18, min(0.65, transition))
+    except Exception as exc:
+        print(f"[YT Hindi] BPM detection unavailable; using 0.42s transition ({type(exc).__name__})")
+        return YT_HINDI_TRANSITION_SECONDS
+    finally:
+        if temporary_wav:
+            try:
+                os.remove(temporary_wav)
+            except OSError:
+                pass
 
 
 # Force UTF-8 on Windows consoles to prevent cp1252 charmap encoding errors
@@ -2058,10 +2131,8 @@ def render_yt_hindi_video_ffmpeg(
     res_h = 960 if is_fast else 1920
     fps = 24 if is_fast else 30
     rect_w = res_w
-    # YT Hindi Type keeps its portrait canvas, but uses a square real-video
-    # area in the center (1080x1080 final / 540x540 fast preview).
-    rect_h = res_w if is_yt_hindi else int(res_w * 720 / 1080)
-    top_margin = (res_h - rect_h) // 2  # 600px margin top and bottom on 1080p
+    rect_h = int(res_w * 720 / 1080)
+    top_margin = (res_h - rect_h) // 2
 
     header_text = get_top_header_text(top_header)
     temp_dir = os.path.dirname(output_path) or "."
@@ -2081,6 +2152,13 @@ def render_yt_hindi_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
+    transition_seconds = detect_tempo_transition_seconds(audio_path)
+    emit_progress(
+        "tempo_detected",
+        76,
+        f"Aubio tempo-adaptive transition: {transition_seconds:.2f}s",
+    )
+
     # Build contiguous timeline segments synced to each lyric line:
     # [(seg_start, seg_dur, lyric_text, fade_out_st, fade_out_d)]
     #
@@ -2096,8 +2174,8 @@ def render_yt_hindi_video_ffmpeg(
         # and transition earlier than the audio.
         if first_start > 0.001:
             intro_dur = min(duration, first_start)
-            intro_fade_st = max(0.0, intro_dur - YT_HINDI_TRANSITION_SECONDS)
-            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(YT_HINDI_TRANSITION_SECONDS, intro_dur - intro_fade_st)))
+            intro_fade_st = max(0.0, intro_dur - transition_seconds)
+            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
@@ -2123,14 +2201,14 @@ def render_yt_hindi_video_ffmpeg(
             # Start fading only after the sung portion. If less than 0.42s
             # remains, shorten the fade rather than moving it earlier.
             fade_out_st = min(seg_dur, line_sing_dur)
-            fade_out_d = min(YT_HINDI_TRANSITION_SECONDS, max(0.0, seg_dur - fade_out_st))
+            fade_out_d = min(transition_seconds, max(0.0, seg_dur - fade_out_st))
 
             timeline_segments.append((s_t, seg_dur, txt, fade_out_st, fade_out_d))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
         timeline_segments = [
-            (i * seg_dur, seg_dur, "", max(0.0, seg_dur - YT_HINDI_TRANSITION_SECONDS), min(YT_HINDI_TRANSITION_SECONDS, seg_dur))
+            (i * seg_dur, seg_dur, "", max(0.0, seg_dur - transition_seconds), min(transition_seconds, seg_dur))
             for i in range(num_seg)
         ]
 
@@ -2183,7 +2261,7 @@ def render_yt_hindi_video_ffmpeg(
         for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
             v_idx = i
             png_idx = num_segments + i
-            fade_in_d = min(YT_HINDI_TRANSITION_SECONDS, seg_dur / 2.0)
+            fade_in_d = min(transition_seconds, seg_dur / 2.0)
             # Scale video clip
             filter_parts.append(
                 f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
@@ -2310,14 +2388,14 @@ def generate_lyric_video(
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
-    is_yt_hindi = (tpl_id == "yt_hindi_type")
+    is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
         b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
         bg_color = b_theme["bg_color"]
     elif is_yt_hindi:
-        tpl = TEMPLATES["yt_hindi_type"]
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["yt_hindi_type"])
         is_brat = False
         bg_color = "black"
     else:

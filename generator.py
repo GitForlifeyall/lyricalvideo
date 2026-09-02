@@ -2318,11 +2318,18 @@ def render_yt_hindi_video_ffmpeg(
 
     intro_png = None
     chosen_overlay_video = None
+    first_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 0.0)
+    audio_delay = 0.0
     burn_dur = 3.0
     if film_burn_intro:
-        # Intro variation: NO top header. Uses whole video from FILM OVERLAY/ + centered intro text.
-        first_lyric_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 3.0)
-        burn_dur = min(4.0, first_lyric_start) if first_lyric_start >= 2.0 else 3.0
+        # If lyrics start early (< 2.5s), we provide a 3.0s intro and delay the audio so vocals and lyrics are 100% in sync!
+        if first_start < 2.5:
+            burn_dur = 3.0
+            audio_delay = 3.0 - first_start
+        else:
+            burn_dur = first_start
+            audio_delay = 0.0
+
         intro_text = get_intro_header_text(intro_header, song_title=song_title, duration=duration or 0.0)
         intro_png = os.path.join(temp_dir, f"intro_{int(time.time()*1000)}.png")
         create_intro_overlay_image(
@@ -2334,7 +2341,7 @@ def render_yt_hindi_video_ffmpeg(
         overlay_pool = get_all_film_overlays()
         if overlay_pool:
             chosen_overlay_video = random.choice(overlay_pool)
-            print(f"[YT Hindi Intro] Selected film overlay video: {os.path.basename(chosen_overlay_video)}")
+            print(f"[YT Hindi Intro] Selected film overlay video: {os.path.basename(chosen_overlay_video)} (burn_dur={burn_dur:.2f}s, audio_delay={audio_delay:.2f}s)")
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -2359,46 +2366,57 @@ def render_yt_hindi_video_ffmpeg(
     # ahead of the audio.
     timeline_segments: List[Tuple[float, float, str, float, float]] = []
     if cues and len(cues) > 0:
-        # Check intro gap before first lyric
-        first_start = cues[0]["timeSeconds"] if isinstance(cues[0], dict) else cues[0][0]
-        # Preserve even short leading silence; dropping it shifts every lyric
-        # and transition earlier than the audio.
-        if first_start > 0.001:
-            intro_dur = min(duration, first_start)
-            intro_fade_st = max(0.0, intro_dur - transition_seconds)
-            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
-        elif film_burn_intro:
-            intro_dur = min(duration, 3.0)
-            intro_fade_st = max(0.0, intro_dur - transition_seconds)
-            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
+        if film_burn_intro:
+            intro_fade_st = max(0.0, burn_dur - transition_seconds)
+            timeline_segments.append((0.0, burn_dur, "", intro_fade_st, min(transition_seconds, burn_dur - intro_fade_st)))
+            effective_total_dur = duration + audio_delay
 
-        for idx, item in enumerate(cues):
-            s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
-            e_t = item["endSeconds"] if isinstance(item, dict) else item[1]
-            txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
-            if idx + 1 < len(cues):
-                next_start = cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]
-                seg_end = next_start
-            else:
-                seg_end = duration
+            for idx, item in enumerate(cues):
+                s_t = (item["timeSeconds"] if isinstance(item, dict) else item[0]) + audio_delay
+                e_t = (item["endSeconds"] if isinstance(item, dict) else item[1]) + audio_delay
+                txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
+                if idx + 1 < len(cues):
+                    next_start = (cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]) + audio_delay
+                    seg_end = next_start
+                else:
+                    seg_end = effective_total_dur
 
-            # Keep every cue inside the rendered timeline and preserve the
-            # exact interval up to the next cue.  The final cue ends at the
-            # audio duration, so concatenation remains sample/timestamp aligned.
-            s_t = max(0.0, min(duration, float(s_t)))
-            seg_end = max(s_t, min(duration, float(seg_end)))
-            seg_dur = seg_end - s_t
-            if seg_dur <= 0.001:
-                continue
+                s_t = max(0.0, min(effective_total_dur, float(s_t)))
+                seg_end = max(s_t, min(effective_total_dur, float(seg_end)))
+                seg_dur = seg_end - s_t
+                if seg_dur <= 0.001:
+                    continue
 
-            line_sing_dur = max(0.0, float(e_t) - float(s_t))
+                line_sing_dur = max(0.0, float(e_t) - float(s_t))
+                fade_out_st = min(seg_dur, line_sing_dur)
+                fade_out_d = min(transition_seconds, max(0.0, seg_dur - fade_out_st))
+                timeline_segments.append((s_t, seg_dur, txt, fade_out_st, fade_out_d))
+        else:
+            if first_start > 0.001:
+                intro_dur = min(duration, first_start)
+                intro_fade_st = max(0.0, intro_dur - transition_seconds)
+                timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
 
-            # Start fading only after the sung portion. If less than 0.42s
-            # remains, shorten the fade rather than moving it earlier.
-            fade_out_st = min(seg_dur, line_sing_dur)
-            fade_out_d = min(transition_seconds, max(0.0, seg_dur - fade_out_st))
+            for idx, item in enumerate(cues):
+                s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
+                e_t = item["endSeconds"] if isinstance(item, dict) else item[1]
+                txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
+                if idx + 1 < len(cues):
+                    next_start = cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]
+                    seg_end = next_start
+                else:
+                    seg_end = duration
 
-            timeline_segments.append((s_t, seg_dur, txt, fade_out_st, fade_out_d))
+                s_t = max(0.0, min(duration, float(s_t)))
+                seg_end = max(s_t, min(duration, float(seg_end)))
+                seg_dur = seg_end - s_t
+                if seg_dur <= 0.001:
+                    continue
+
+                line_sing_dur = max(0.0, float(e_t) - float(s_t))
+                fade_out_st = min(seg_dur, line_sing_dur)
+                fade_out_d = min(transition_seconds, max(0.0, seg_dur - fade_out_st))
+                timeline_segments.append((s_t, seg_dur, txt, fade_out_st, fade_out_d))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
@@ -2541,6 +2559,15 @@ def render_yt_hindi_video_ffmpeg(
             filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
             extra_image_inputs = ["-i", header_png]
 
+        # Handle synchronized audio delay if intro was inserted
+        final_render_duration = duration + audio_delay
+        if audio_delay > 0.001:
+            audio_delay_ms = int(round(audio_delay * 1000))
+            filter_parts.append(f";[{audio_idx}:a]adelay={audio_delay_ms}|{audio_delay_ms},apad[a_synced]")
+            audio_map_out = "[a_synced]"
+        else:
+            audio_map_out = f"{audio_idx}:a"
+
         filter_complex = "".join(filter_parts)
 
         ffmpeg_cmd = (
@@ -2550,8 +2577,8 @@ def render_yt_hindi_video_ffmpeg(
             extra_image_inputs +
             ["-i", audio_path] +
             ["-filter_complex", filter_complex] +
-            ["-map", "[v_out]", "-map", f"{audio_idx}:a"] +
-            ["-t", f"{duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
+            ["-map", "[v_out]", "-map", audio_map_out] +
+            ["-t", f"{final_render_duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
             encoder_flags +
             ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path]
         )

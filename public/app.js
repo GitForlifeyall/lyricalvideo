@@ -197,6 +197,17 @@ function setupEventListeners() {
         } else {
           showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
         }
+      } else if (state.template === 'master_lyrics') {
+        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
+        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
+        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
+        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
+        state.fontFamily = 'EB Garamond';
+        state.fontSize = 44;
+        state.blur = 0;
+        fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'EB Garamond'));
+        applyRealtimePlacementAndSize();
+        showToast('📜 Master Lyric Template activated (Aesthetic verse card with black pill highlight)');
       } else {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
@@ -795,7 +806,7 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
       stageLiveSubtitleText.style.textShadow = '0 2px 10px rgba(0,0,0,0.95), 0 0 5px #000000';
     }
 
-    const mergedYtHindiOutput = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro'].includes(state.activeMetadata?.template);
+    const mergedYtHindiOutput = ['yt_hindi_type', 'yt_hindi_intro', 'master_lyrics'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro', 'master_lyrics'].includes(state.activeMetadata?.template);
     if (state.overlayEnabled && !mergedYtHindiOutput) {
       stageLiveSubtitleOverlay.style.display = 'flex';
     } else {
@@ -1118,7 +1129,7 @@ function syncTeleprompter(currentTime) {
     const isBrat = state.template === 'template4_brat' || state.template === 'template_4_brat' || state.template === 'brat';
     
     // Real-Time Lyric Rendering directly on the Interactive Video Layer
-    const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro'].includes(state.activeMetadata?.template);
+    const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro', 'master_lyrics'].includes(state.template) || ['yt_hindi_type', 'yt_hindi_intro', 'master_lyrics'].includes(state.activeMetadata?.template);
     if (!isYtHindi && stageLiveSubtitleText && state.overlayEnabled && activeLine && activeLine.text) {
       if (isBrat) {
         const words = activeLine.text.trim().split(/\s+/).filter(Boolean);

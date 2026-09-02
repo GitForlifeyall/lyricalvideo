@@ -1295,6 +1295,24 @@ TEMPLATES = {
         "blur": 0.0,
         "force_lowercase": False,
         "film_burn_intro": True,
+    },
+    "master_lyrics": {
+        "id": "master_lyrics",
+        "name": "Master Lyric (Aesthetic Card)",
+        "aspect_ratio": "portrait",
+        "font_name": "EB Garamond",
+        "font_size": 44,
+        "primary_color": "&H00000000",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": 0,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 0,
+        "bg_color": "photo",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
     }
 }
 
@@ -1690,11 +1708,15 @@ def build_ass_and_lrc_content(
     """
     tpl_id = (template_key or "").lower().strip()
     is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
+    is_master = (tpl_id == "master_lyrics")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
     elif is_yt_hindi:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["yt_hindi_type"])
+        is_brat = False
+    elif is_master:
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["master_lyrics"])
         is_brat = False
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
@@ -2637,6 +2659,300 @@ def render_yt_hindi_video_ffmpeg(
     return output_path
 
 
+def format_master_header_title(song_title: str) -> str:
+    """Format song title as "SONG NAME" LYRICS in uppercase, stripping unwanted video tags."""
+    clean = (song_title or "SONG").strip()
+    if "http" in clean.lower():
+        clean = "SONG"
+    clean = re.sub(r'[\(\[\{].*?[\)\]\}]', '', clean)
+    if " - " in clean:
+        parts = clean.split(" - ", 1)
+        clean = parts[1].strip()
+    clean = re.sub(r'\s+', ' ', clean).strip()
+    if not clean:
+        clean = "SONG"
+    return f'"{clean.upper()}" LYRICS'
+
+
+def get_english_generic_background() -> Tuple[str, bool]:
+    """
+    Returns (path, is_video) for media in videos/input/English generic/.
+    Supports images (.jpg, .jpeg, .png, .webp) and video files (.mp4, .mov, .mkv).
+    """
+    base_dir = os.path.join(os.path.dirname(__file__), "videos", "input", "English generic")
+    if os.path.exists(base_dir):
+        files = [os.path.join(base_dir, f) for f in os.listdir(base_dir) if not f.startswith(".")]
+        v_exts = (".mp4", ".mov", ".mkv", ".webm")
+        img_exts = (".jpg", ".jpeg", ".png", ".webp")
+        images = [f for f in files if f.lower().endswith(img_exts)]
+        videos = [f for f in files if f.lower().endswith(v_exts)]
+        if images:
+            return random.choice(images), False
+        elif videos:
+            return random.choice(videos), True
+
+    # Fallback to images.jpg if present
+    img_fallback = os.path.join(os.path.dirname(__file__), "videos", "input", "English generic", "images.jpg")
+    if os.path.exists(img_fallback):
+        return img_fallback, False
+    return "", False
+
+
+def render_master_lyric_video_ffmpeg(
+    audio_path: str,
+    output_path: str,
+    duration: float,
+    cues: List[Any],
+    song_title: Optional[str] = None,
+    preview_quality: str = "final",
+    start_seconds: float = 0.0,
+    end_seconds: Optional[float] = None
+) -> str:
+    """
+    Renders video adhering strictly to MASTER LYRIC TEMPLATE SPECIFICATION:
+    - Canvas: 9:16 Vertical (1080 x 1920 pixels), 24 fps
+    - Background: Media from videos/input/English generic/ (100% Opacity, NO dark overlay or tint)
+    - Header Title: "SONG NAME" LYRICS in bold serif, centered at (X: 540, Y: 180), #000000 solid black
+    - Lyrics Container: Centered vertically at Y: 960px, max width 920px (margin 80px left/right)
+    - Line Spacing: 1.6x Line Height, Base font EB Garamond 44px
+    - Dynamic Line State Machine:
+      * Inactive State: #000000 (solid black), transparent background, normal weight (400)
+      * Active State: #FFFFFF (solid white), bold (700)/scale 1.03, inside a rounded pill
+        (#000000 / #111111 85% opacity, padding 12px top/bottom, 24px left/right, border radius 12px)
+      * Post-Active Reset: Immediately reverts to #000000, removes pill, resets to normal weight
+    """
+    res_w = 1080
+    res_h = 1920
+    fps = 24
+
+    is_fast = (preview_quality or "").lower() in ("fast", "draft", "preview")
+    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    if is_fast:
+        encoder_name = "libx264"
+        encoder_flags = ["-preset", "ultrafast", "-crf", "26"]
+
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering Master Lyric {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
+
+    # Fonts
+    # Header: Bold Serif (Georgia Bold / Times New Roman Bold)
+    h_font_path = "C:/Windows/Fonts/georgiab.ttf" if os.path.exists("C:/Windows/Fonts/georgiab.ttf") else ("C:/Windows/Fonts/timesbd.ttf" if os.path.exists("C:/Windows/Fonts/timesbd.ttf") else "fonts/EBGaramond-Variable.ttf")
+    header_font = ImageFont.truetype(h_font_path, 68)
+
+    # Lyrics: EB Garamond (Medium Serif)
+    l_font_path = "fonts/EBGaramond-Variable.ttf" if os.path.exists("fonts/EBGaramond-Variable.ttf") else "C:/Windows/Fonts/georgia.ttf"
+    lyrics_font_normal = ImageFont.truetype(l_font_path, 44)
+    lyrics_font_active = ImageFont.truetype(l_font_path, int(round(44 * 1.03)))
+
+    header_text = format_master_header_title(song_title or "SONG")
+
+    # Parse cues into structured list [(start_t, end_t, text)]
+    parsed_cues = []
+    for item in (cues or []):
+        if isinstance(item, dict):
+            st = float(item.get("timeSeconds", 0.0))
+            et = float(item.get("endSeconds", st + 3.0))
+            txt = item.get("text", "").strip()
+        elif isinstance(item, (list, tuple)):
+            st = float(item[0])
+            et = float(item[1])
+            txt = str(item[2]).strip() if len(item) > 2 else ""
+        else:
+            continue
+        if txt and et > st:
+            parsed_cues.append((st, et, txt))
+
+    parsed_cues.sort(key=lambda x: x[0])
+
+    # Build sequence of discrete state intervals across [0, duration]
+    time_boundaries = {0.0, float(duration)}
+    for st, et, _ in parsed_cues:
+        if 0.0 <= st <= duration:
+            time_boundaries.add(round(st, 3))
+        if 0.0 <= et <= duration:
+            time_boundaries.add(round(et, 3))
+    sorted_times = sorted(time_boundaries)
+
+    intervals = []
+    for i in range(len(sorted_times) - 1):
+        t_start = sorted_times[i]
+        t_end = sorted_times[i + 1]
+        seg_d = t_end - t_start
+        if seg_d <= 0.01:
+            continue
+        t_mid = (t_start + t_end) / 2.0
+
+        # Find active line if any
+        active_idx = -1
+        for c_idx, (st, et, _) in enumerate(parsed_cues):
+            if st <= t_mid <= et:
+                active_idx = c_idx
+                break
+
+        intervals.append((t_start, t_end, seg_d, active_idx))
+
+    temp_dir = os.path.join(os.path.dirname(output_path), f"temp_master_{int(time.time()*1000)}")
+    os.makedirs(temp_dir, exist_ok=True)
+
+    def wrap_words(txt: str, fnt: ImageFont.ImageFont, max_w: int = 920) -> List[str]:
+        words = txt.split()
+        if not words:
+            return []
+        lines_out = []
+        cur_words = []
+        for w in words:
+            cand = " ".join(cur_words + [w])
+            bbox = fnt.getbbox(cand)
+            if (bbox[2] - bbox[0]) <= max_w:
+                cur_words.append(w)
+            else:
+                if cur_words:
+                    lines_out.append(" ".join(cur_words))
+                    cur_words = [w]
+                else:
+                    lines_out.append(w)
+                    cur_words = []
+        if cur_words:
+            lines_out.append(" ".join(cur_words))
+        return lines_out
+
+    # Render unique state PNGs
+    state_to_filename = {}
+    concat_entries = []
+    line_h = int(round(44 * 1.6)) # 70px
+
+    try:
+        for t_start, t_end, seg_d, active_idx in intervals:
+            # Determine visible line window centered on active or next line
+            if active_idx != -1:
+                center_idx = active_idx
+            else:
+                # Find next upcoming line
+                center_idx = 0
+                for c_idx, (st, _, _) in enumerate(parsed_cues):
+                    if st >= t_start:
+                        center_idx = c_idx
+                        break
+
+            start_w = max(0, min(center_idx - 2, max(0, len(parsed_cues) - 5)))
+            end_w = min(len(parsed_cues), start_w + 5)
+            visible_slice = list(range(start_w, end_w))
+
+            state_key = (active_idx, tuple(visible_slice))
+            if state_key not in state_to_filename:
+                img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
+                draw = ImageDraw.Draw(img)
+
+                # 1. Header: "SONG NAME" LYRICS at (X: 540, Y: 180)
+                hb = draw.textbbox((0, 0), header_text, font=header_font)
+                hw, hh = hb[2] - hb[0], hb[3] - hb[1]
+                draw.text(((res_w - hw) / 2, 180 - (hh / 2)), header_text, font=header_font, fill=(0, 0, 0, 255))
+
+                # 2. Compute heights of visible lines (handling wrapping)
+                block_lines = []
+                total_content_height = 0
+                for v_idx in visible_slice:
+                    l_text = parsed_cues[v_idx][2]
+                    is_active = (v_idx == active_idx)
+                    cur_font = lyrics_font_active if is_active else lyrics_font_normal
+                    wrapped = wrap_words(l_text, cur_font, max_w=920) or [l_text]
+                    l_block_height = len(wrapped) * line_h
+                    block_lines.append((v_idx, is_active, wrapped, cur_font, l_block_height))
+                    total_content_height += l_block_height
+
+                # Center container at Y: 960px
+                cur_y = 960 - (total_content_height // 2)
+
+                for v_idx, is_active, wrapped, cur_font, l_block_height in block_lines:
+                    for sub_idx, sub_text in enumerate(wrapped):
+                        sbbox = draw.textbbox((0, 0), sub_text, font=cur_font)
+                        sw, sh = sbbox[2] - sbbox[0], sbbox[3] - sbbox[1]
+                        line_center_y = cur_y + (sub_idx * line_h) + (line_h // 2)
+                        sx = (res_w - sw) / 2
+                        sy = line_center_y - (sh / 2)
+
+                        if is_active:
+                            pad_x = 24
+                            pad_y = 12
+                            pill_x1 = sx - pad_x
+                            pill_y1 = sy - pad_y
+                            pill_x2 = sx + sw + pad_x
+                            pill_y2 = sy + sh + pad_y
+
+                            draw.rounded_rectangle(
+                                [pill_x1, pill_y1, pill_x2, pill_y2],
+                                radius=12,
+                                fill=(17, 17, 17, int(round(255 * 0.85))) # #111111 with 85% opacity
+                            )
+                            draw.text((sx, sy), sub_text, font=cur_font, fill=(255, 255, 255, 255))
+                        else:
+                            draw.text((sx, sy), sub_text, font=cur_font, fill=(0, 0, 0, 255))
+
+                    cur_y += l_block_height
+
+                fn = f"state_{len(state_to_filename)}.png"
+                img.save(os.path.join(temp_dir, fn))
+                state_to_filename[state_key] = fn
+
+            concat_entries.append((state_to_filename[state_key], seg_d))
+
+        concat_file_path = os.path.join(temp_dir, "states_concat.txt")
+        with open(concat_file_path, "w", encoding="utf-8") as cf:
+            for fn, seg_d in concat_entries:
+                cf.write(f"file '{fn}'\nduration {seg_d:.3f}\n")
+            if concat_entries:
+                # FFmpeg concat demuxer requires repeating the last file without duration
+                cf.write(f"file '{concat_entries[-1][0]}'\n")
+
+        # Discover background media from videos/input/English generic/
+        bg_media_path, is_bg_video = get_english_generic_background()
+        print(f"[Master Lyric] Background source: '{bg_media_path}' (is_video={is_bg_video})")
+
+        inputs = []
+        if bg_media_path and os.path.exists(bg_media_path):
+            if is_bg_video:
+                inputs.extend(["-stream_loop", "-1", "-i", bg_media_path])
+            else:
+                inputs.extend(["-loop", "1", "-i", bg_media_path])
+        else:
+            # Fallback to white/clean canvas if folder is empty
+            inputs.extend(["-f", "lavfi", "-i", f"color=c=white:s={res_w}x{res_h}:r={fps}:d={duration:.2f}"])
+
+        inputs.extend(["-f", "concat", "-safe", "0", "-i", concat_file_path])
+        inputs.extend(["-i", audio_path])
+
+        filter_complex = (
+            f"[0:v]scale={res_w}:{res_h}:force_original_aspect_ratio=increase,"
+            f"crop={res_w}:{res_h},setsar=1,fps={fps}[bg];"
+            f"[bg][1:v]overlay=0:0[v_out]"
+        )
+
+        ffmpeg_cmd = (
+            ["ffmpeg", "-y", "-threads", "0"] +
+            inputs +
+            ["-filter_complex", filter_complex] +
+            ["-map", "[v_out]", "-map", "2:a"] +
+            ["-t", f"{duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
+            encoder_flags +
+            ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path]
+        )
+
+        emit_progress("ffmpeg_rendering", 85, f"Hardware encoding Master Lyric {res_w}x{res_h} video with {encoder_name}...")
+        subprocess.run(ffmpeg_cmd, check=True)
+
+    finally:
+        try:
+            if os.path.exists(temp_dir):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+        raise RuntimeError(f"Rendered video {output_path} is missing or empty.")
+
+    emit_progress("ffmpeg_done", 95, f"Master Lyric Video successfully rendered to '{output_path}'.")
+    return output_path
+
+
 def generate_lyric_video(
     song_query: str,
     output_path: str = "output_lyric_video.mp4",
@@ -2676,6 +2992,10 @@ def generate_lyric_video(
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["yt_hindi_type"])
         is_brat = False
         bg_color = "black"
+    elif tpl_id == "master_lyrics":
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["master_lyrics"])
+        is_brat = False
+        bg_color = "photo"
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
         is_brat = False
@@ -2800,6 +3120,18 @@ def generate_lyric_video(
             film_burn_intro=(tpl_id == "yt_hindi_intro"),
             intro_header=intro_header,
             song_title=yt_data.get("title") or song_query
+        )
+
+    elif tpl_id == "master_lyrics":
+        render_master_lyric_video_ffmpeg(
+            audio_path=audio_path,
+            output_path=output_path,
+            duration=duration,
+            cues=structured_lines,
+            song_title=yt_data.get("title") or song_query,
+            preview_quality=preview_quality,
+            start_seconds=test_start,
+            end_seconds=test_end
         )
 
     elif clean_base:

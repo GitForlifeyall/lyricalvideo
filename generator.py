@@ -1014,7 +1014,7 @@ TEMPLATES = {
         "name": "YT Hindi Type (Cinematic Video)",
         "aspect_ratio": "portrait",
         "font_name": "EB Garamond",
-        "font_size": 56,
+        "font_size": 44,
         "primary_color": "&H00FFFFFF",
         "outline_color": "&H00000000",
         "back_color": "&H80000000",
@@ -1028,6 +1028,7 @@ TEMPLATES = {
         "force_lowercase": False,
     }
 }
+
 
 
 def get_top_header_text(user_header: Optional[str] = None) -> str:
@@ -1364,7 +1365,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 dlg_text = f"{pos_override_tag}{brat_inline_tag}{text_string}" if pos_override_tag else f"{brat_inline_tag}{text_string}"
                 dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
         elif is_yt_hindi:
-            # YT Hindi Type: Preserves original casing, fits on 1 line when possible, smooth fade transition
+            # YT Hindi Type: Preserves original casing or formats all-caps to sentence case
+            letters = [c for c in clean_text if c.isalpha()]
+            if letters and all(c.isupper() for c in letters) and len(letters) > 3:
+                clean_text = clean_text.capitalize()
+
             if len(clean_text) > 55:
                 cur_fs = int(actual_font_size * 0.72)
                 wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=48)
@@ -1378,12 +1383,12 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 cur_fs = actual_font_size
                 wrapped_text = clean_text
 
-
             formatted_clean = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
-            fade_tag = r"{\fad(180,180)}"
+            fade_tag = r"{\fad(210,210)}"
             inline_tag = f"{{\\fs{cur_fs}\\fsp{spacing_val}}}"
             dialogue_text = f"{pos_override_tag}{fade_tag}{inline_tag}{formatted_clean}" if pos_override_tag else f"{fade_tag}{inline_tag}{formatted_clean}"
             dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
+
         else:
             wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=22)
             formatted_clean = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
@@ -1762,8 +1767,9 @@ def render_yt_hindi_video_ffmpeg(
     res_w = 540 if is_fast else 1080
     res_h = 960 if is_fast else 1920
     fps = 24 if is_fast else 30
-    rect_size = res_w  # 1080x1080 square in center (or 540x540)
-    top_margin = (res_h - rect_size) // 2  # 420 for 1080p, 210 for 540p
+    rect_w = res_w
+    rect_h = int(res_w * 720 / 1080)  # 1080x720 rectangle on 1080p (540x360 on 540p)
+    top_margin = (res_h - rect_h) // 2  # 600px margin top and bottom on 1080p
 
     header_text = get_top_header_text(top_header)
     temp_dir = os.path.dirname(output_path) or "."
@@ -1801,12 +1807,13 @@ def render_yt_hindi_video_ffmpeg(
 
     if bg_video and os.path.exists(bg_video):
         filter_complex = (
-            f"[0:v]scale={rect_size}:{rect_size}:force_original_aspect_ratio=increase,"
-            f"crop={rect_size}:{rect_size},"
+            f"[0:v]scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
+            f"crop={rect_w}:{rect_h},"
             f"pad={res_w}:{res_h}:0:{top_margin}:color=black[bg];"
             f"[bg][1:v]overlay=0:0[with_hdr];"
             f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
         )
+
         ffmpeg_cmd = [
             "ffmpeg", "-y",
             "-threads", "0",

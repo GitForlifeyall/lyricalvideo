@@ -39,7 +39,8 @@ Each template serves a distinct aesthetic and must remain untouched unless expli
 | `template2` | **Template 2** | Montserrat 54pt, yellow accent | Black canvas, portrait 9:16 |
 | `template3` | **Template 3** | Arial 48pt, clean subtitle style | Black canvas, landscape 16:9 |
 | `template4_brat` | **Brat Minimal** | Arial Narrow 72pt, lowercase, dynamic word accumulation | Solid colors (`#8ACE00`, White, SWEAT Tour Blue, etc.) |
-| `yt_hindi_type` | **YT Hindi Type** | **EB Garamond** (centered, natural casing, `\fad(180,180)` fade) + **Georgia Italic** top header with Apple emojis | Centered rectangular video clip from `videos/input/` with black letterbox top & bottom |
+| `yt_hindi_type` | **YT Hindi Type** | **EB Garamond** (centered, natural/sentence casing, 44pt, `\fad(210,210)` fade) + **Georgia Italic** top header with Apple emojis | Centered 1080×720 rectangular video clip from `videos/input/` on 1080×1920 black canvas |
+
 
 ---
 

@@ -2290,20 +2290,24 @@ def render_yt_hindi_video_ffmpeg(
     rect_h = int(res_w * 720 / 1080)
     top_margin = (res_h - rect_h) // 2
 
-    header_text = get_top_header_text(top_header)
     temp_dir = os.path.dirname(output_path) or "."
-    header_png = os.path.join(temp_dir, f"header_{int(time.time()*1000)}.png")
-    create_header_overlay_image(
-        header_text=header_text,
-        canvas_width=res_w,
-        canvas_height=res_h,
-        top_margin_height=top_margin,
-        output_png_path=header_png
-    )
+    header_png = None
+    if not film_burn_intro:
+        # Standard YT Hindi Type has top header throughout
+        header_text = get_top_header_text(top_header)
+        header_png = os.path.join(temp_dir, f"header_{int(time.time()*1000)}.png")
+        create_header_overlay_image(
+            header_text=header_text,
+            canvas_width=res_w,
+            canvas_height=res_h,
+            top_margin_height=top_margin,
+            output_png_path=header_png
+        )
 
     intro_png = None
     burn_dur = 3.0
     if film_burn_intro:
+        # Intro variation: NO top header, ONLY the intro text during the intro window
         first_lyric_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 3.0)
         burn_dur = min(4.0, first_lyric_start) if first_lyric_start >= 2.0 else 3.0
         intro_text = get_intro_header_text(intro_header, song_title=song_title, duration=duration or 0.0)
@@ -2458,13 +2462,12 @@ def render_yt_hindi_video_ffmpeg(
         filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[canvas];")
 
         if film_burn_intro and intro_png:
-            hdr_idx = 2 * num_segments
-            intro_idx = 2 * num_segments + 1
-            audio_idx = 2 * num_segments + 2
+            intro_idx = 2 * num_segments
+            audio_idx = 2 * num_segments + 1
 
             # Apply procedural film burn to canvas (no red or white lines)
             burn_filter_str, _ = generate_film_burn_filters(intro_duration=burn_dur)
-            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s) with intro text")
+            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s) with intro text (NO headers.txt)")
             filter_parts.append(f"[canvas]{burn_filter_str}[burned];")
 
             # Intro text with smooth fade in and fade out (loop static image continuously)
@@ -2475,20 +2478,12 @@ def render_yt_hindi_video_ffmpeg(
                 f"[{intro_idx}:v]format=rgba,loop=-1:1:0,fade=t=in:st=0.25:d={fade_in_d:.3f}:alpha=1,"
                 f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.3f}:alpha=1[intro_txt];"
             )
-            # Overlay intro text on burned canvas strictly during intro window
+            # Overlay intro text on burned canvas strictly during intro window. No top header is added.
             filter_parts.append(
-                f"[burned][intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[with_intro];"
+                f"[burned][intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[v_out]"
             )
 
-            # Top header: hidden during intro, smoothly fades in only after intro ends
-            filter_parts.append(
-                f"[{hdr_idx}:v]format=rgba,loop=-1:1:0,fade=t=in:st={burn_dur:.3f}:d=0.42:alpha=1[faded_hdr];"
-            )
-            filter_parts.append(
-                f"[with_intro][faded_hdr]overlay=0:0:enable='gte(t,{burn_dur:.3f})'[v_out]"
-            )
-
-            extra_image_inputs = ["-i", header_png, "-i", intro_png]
+            extra_image_inputs = ["-i", intro_png]
         else:
             hdr_idx = 2 * num_segments
             audio_idx = 2 * num_segments + 1
@@ -2546,8 +2541,13 @@ def render_yt_hindi_video_ffmpeg(
             except Exception:
                 pass
         try:
-            if os.path.exists(header_png):
+            if header_png and os.path.exists(header_png):
                 os.remove(header_png)
+        except Exception:
+            pass
+        try:
+            if intro_png and os.path.exists(intro_png):
+                os.remove(intro_png)
         except Exception:
             pass
 

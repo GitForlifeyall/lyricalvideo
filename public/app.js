@@ -184,7 +184,7 @@ function setupEventListeners() {
       } else if (isYtHindi) {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
-        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'flex';
+        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = (state.template === 'yt_hindi_type') ? 'flex' : 'none';
         if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = (state.template === 'yt_hindi_intro') ? 'flex' : 'none';
         state.fontFamily = 'EB Garamond';
         state.fontSize = 68;
@@ -193,7 +193,7 @@ function setupEventListeners() {
         state.topHeader = ytHindiTopHeaderInput ? ytHindiTopHeaderInput.value : '(When Lyrics feel Too Personal...)';
         applyRealtimePlacementAndSize();
         if (state.template === 'yt_hindi_intro') {
-          showToast('🔥 YT Hindi (Film Burn Intro) activated — vintage procedural film burn intro enabled!');
+          showToast('🔥 YT Hindi (Film Burn Intro) activated — custom intro text with vintage film burn!');
         } else {
           showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
         }

@@ -119,12 +119,8 @@ def generate_film_burn_filters(intro_duration: float = INTRO_DURATION) -> Tuple[
     dur = f"{intro_duration:.3f}"
     scope = f"between(t,0,{dur})"
 
-    # 3. Scoped Multi-Layer Filter Chain:
+    # 3. Scoped Multi-Layer Filter Chain (pure stable motion, no datamosh tearing):
     filter_chain = [
-        # g. Film Gate Weave / Jitter (crop + pad):
-        # Shifts frame vertically during intro window, perfectly stable at 0 after intro
-        f"crop=w=in_w:h=in_h-{jitter_px*2}:x=0:y='if({scope}, {jitter_px}+{jitter_px}*sin(n*{jitter_speed}), {jitter_px})',pad=in_w:in_h:0:{jitter_px}",
-
         # a. Light Bloom & Lens Defocus (gblur):
         # Dynamic optical bloom active strictly during intro
         f"gblur=sigma={bloom_sigma}:steps=1:enable='{scope}'",
@@ -143,7 +139,7 @@ def generate_film_burn_filters(intro_duration: float = INTRO_DURATION) -> Tuple[
 
         # d. Analog Film Grain (noise):
         # Temporal film celluloid noise with unique seed per export
-        f"noise=alls={noise_strength}:allf=t+u:all_seed={noise_seed}:enable='{scope}'"
+        f"noise=alls={noise_strength}:all_flags=t:all_seed={noise_seed}:enable='{scope}'"
     ]
 
     random_params = {
@@ -154,8 +150,7 @@ def generate_film_burn_filters(intro_duration: float = INTRO_DURATION) -> Tuple[
         "bloom_sigma": bloom_sigma,
         "color_temp": f"R:{red_gain} G:{green_gain} B:{blue_gain} (Amber:{amber_mix})",
         "noise_seed": noise_seed,
-        "noise_strength": noise_strength,
-        "gate_weave_jitter": f"±{jitter_px}px @ {jitter_speed} rad/s"
+        "noise_strength": noise_strength
     }
 
     return ",".join(filter_chain), random_params

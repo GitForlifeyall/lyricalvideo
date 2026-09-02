@@ -2350,6 +2350,10 @@ def render_yt_hindi_video_ffmpeg(
             intro_dur = min(duration, first_start)
             intro_fade_st = max(0.0, intro_dur - transition_seconds)
             timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
+        elif film_burn_intro:
+            intro_dur = min(duration, 3.0)
+            intro_fade_st = max(0.0, intro_dur - transition_seconds)
+            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(transition_seconds, intro_dur - intro_fade_st)))
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
@@ -2390,14 +2394,15 @@ def render_yt_hindi_video_ffmpeg(
     lyric_png_paths = []
     if all_bg_videos and timeline_segments:
         num_segments = len(timeline_segments)
+        # If film_burn_intro, segment 0 is a pure black plain with NO background video
+        clips_needed = (num_segments - 1) if (film_burn_intro and num_segments > 1) else num_segments
         selected_clips = []
         last_clip = None
         shuffled_pool = []
-        for _ in range(num_segments):
+        for _ in range(max(1, clips_needed)):
             if not shuffled_pool:
                 shuffled_pool = list(all_bg_videos)
                 random.shuffle(shuffled_pool)
-                # Keep the cycle boundary from repeating the previous clip.
                 if len(shuffled_pool) > 1 and shuffled_pool[-1] == last_clip:
                     swap_index = random.randrange(len(shuffled_pool) - 1)
                     shuffled_pool[-1], shuffled_pool[swap_index] = (
@@ -2407,12 +2412,13 @@ def render_yt_hindi_video_ffmpeg(
             selected_clips.append(chosen)
             last_clip = chosen
 
-        print(f"[YT Hindi] Merging {num_segments} per-lyric video clips + lyric text overlays with synchronized fading")
+        print(f"[YT Hindi] Merging {num_segments} segments ({clips_needed} video clips, intro on black plain={film_burn_intro})")
 
-        # Generate lyric text PNG overlay for each segment (strictly scaled to never exceed 82% video width)
+        # Generate lyric text PNG overlay for each segment (skip intro segment if film_burn_intro)
         for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
-            # During intro window of film_burn_intro, do NOT show any lyric text
-            eff_text = "" if (film_burn_intro and seg_start < burn_dur) else seg_text
+            if film_burn_intro and i == 0:
+                continue
+            eff_text = seg_text
             png_path = os.path.join(temp_dir, f"lyric_seg_{int(time.time()*1000)}_{i}.png")
             create_lyric_line_overlay_image(
                 text=eff_text,
@@ -2422,7 +2428,6 @@ def render_yt_hindi_video_ffmpeg(
                 base_font_size=50,
                 output_png_path=png_path
             )
-
             lyric_png_paths.append(png_path)
 
         video_inputs = []
@@ -2434,25 +2439,37 @@ def render_yt_hindi_video_ffmpeg(
             png_inputs.extend(["-i", p])
 
         filter_parts = []
+        video_clip_idx = 0
+        lyric_png_idx = 0
         for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
-            v_idx = i
-            png_idx = num_segments + i
             fade_in_d = min(transition_seconds, seg_dur / 2.0)
-            # Scale video clip
-            filter_parts.append(
-                f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
-                f"scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
-                f"crop={rect_w}:{rect_h},setsar=1,fps={fps}[bg{i}];"
-            )
-            # Merge lyric text directly onto the video clip first
-            filter_parts.append(
-                f"[bg{i}][{png_idx}:v]overlay=0:0[merged{i}];"
-            )
-            # Apply fade in & fade out to the MERGED (video + text) segment
-            fade_filters = [f"fade=t=in:st=0:d={fade_in_d:.3f}"]
+            fade_filters = []
             if fade_out_d > 0.001:
                 fade_filters.append(f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.3f}")
-            filter_parts.append(f"[merged{i}]" + ",".join(fade_filters) + f"[v{i}];")
+
+            if film_burn_intro and i == 0:
+                # Segment 0 is 100% solid black plain. NO background video clip during intro.
+                fade_str = ("," + ",".join(fade_filters)) if fade_filters else ""
+                filter_parts.append(f"color=c=black:s={rect_w}x{rect_h}:r={fps}:d={seg_dur:.3f}{fade_str}[v0];")
+            else:
+                v_in_idx = video_clip_idx
+                p_in_idx = len(selected_clips) + lyric_png_idx
+                video_clip_idx += 1
+                lyric_png_idx += 1
+
+                # Scale video clip
+                filter_parts.append(
+                    f"[{v_in_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
+                    f"scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
+                    f"crop={rect_w}:{rect_h},setsar=1,fps={fps}[bg{i}];"
+                )
+                # Merge lyric text directly onto the video clip first
+                filter_parts.append(
+                    f"[bg{i}][{p_in_idx}:v]overlay=0:0[merged{i}];"
+                )
+                # Apply fade in & fade out to the MERGED (video + text) segment
+                f_list = [f"fade=t=in:st=0:d={fade_in_d:.3f}"] + fade_filters
+                filter_parts.append(f"[merged{i}]" + ",".join(f_list) + f"[v{i}];")
 
 
 
@@ -2462,8 +2479,8 @@ def render_yt_hindi_video_ffmpeg(
         filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[canvas];")
 
         if film_burn_intro and intro_png:
-            intro_idx = 2 * num_segments
-            audio_idx = 2 * num_segments + 1
+            intro_idx = len(selected_clips) + len(lyric_png_paths)
+            audio_idx = intro_idx + 1
 
             # Apply procedural film burn to canvas (no red or white lines)
             burn_filter_str, _ = generate_film_burn_filters(intro_duration=burn_dur)

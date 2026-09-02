@@ -1169,13 +1169,13 @@ def create_lyric_line_overlay_image(
     rect_w: int = 1080,
     rect_h: int = 720,
     font_name: str = "EB Garamond",
-    base_font_size: int = 44,
+    base_font_size: int = 50,
     output_png_path: str = "line_overlay.png"
 ) -> str:
     """
     Renders a single lyric line centered horizontally and vertically
     on a transparent RGBA image of size (rect_w, rect_h).
-    Guarantees that the text NEVER exceeds 82% of the video rectangle width (880px on 1080p).
+    Guarantees that the text NEVER exceeds 88% of the video rectangle width (950px on 1080p).
     """
     img = Image.new("RGBA", (rect_w, rect_h), (0, 0, 0, 0))
     if not text or not text.strip():
@@ -1208,15 +1208,15 @@ def create_lyric_line_overlay_image(
         return ImageFont.load_default()
 
     font = get_font(target_font_size)
-    max_allowed_w = int(rect_w * 0.82)  # Strict 82% inner safe area (885px on 1080p)
+    max_allowed_w = int(rect_w * 0.88)  # Safe 88% inner area (950px on 1080p)
 
     # Auto-scale font size down until text width <= max_allowed_w
     bbox = draw.textbbox((0, 0), clean_text, font=font)
     text_w = bbox[2] - bbox[0]
     text_h = bbox[3] - bbox[1]
 
-    while text_w > max_allowed_w and target_font_size > int(18 * scale):
-        target_font_size = max(int(18 * scale), int(target_font_size * (max_allowed_w / max(1, text_w)) * 0.98))
+    while text_w > max_allowed_w and target_font_size > int(20 * scale):
+        target_font_size = max(int(20 * scale), int(target_font_size * (max_allowed_w / max(1, text_w)) * 0.98))
         font = get_font(target_font_size)
         bbox = draw.textbbox((0, 0), clean_text, font=font)
         text_w = bbox[2] - bbox[0]
@@ -1228,6 +1228,7 @@ def create_lyric_line_overlay_image(
     draw.text((x_pos, y_pos), clean_text, font=font, fill=(255, 255, 255, 255))
     img.save(output_png_path, "PNG")
     return output_png_path
+
 
 
 
@@ -1936,9 +1937,10 @@ def render_yt_hindi_video_ffmpeg(
                 rect_w=rect_w,
                 rect_h=rect_h,
                 font_name="EB Garamond",
-                base_font_size=42,
+                base_font_size=50,
                 output_png_path=png_path
             )
+
             lyric_png_paths.append(png_path)
 
         video_inputs = []

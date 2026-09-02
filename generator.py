@@ -10,7 +10,9 @@ import sys
 import json
 import glob
 import random
+import math
 import textwrap
+
 import subprocess
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
@@ -1011,16 +1013,17 @@ TEMPLATES = {
     },
     "yt_hindi_type": {
         "id": "yt_hindi_type",
+
         "name": "YT Hindi Type (Cinematic Video)",
         "aspect_ratio": "portrait",
         "font_name": "EB Garamond",
         "font_size": 44,
         "primary_color": "&H00FFFFFF",
         "outline_color": "&H00000000",
-        "back_color": "&H80000000",
+        "back_color": "&H00000000",
         "bold": 0,
-        "outline_width": 2,
-        "shadow_depth": 2,
+        "outline_width": 0,
+        "shadow_depth": 0,
         "margin_v": 0,
         "bg_color": "black",
         "scale_x": 100,
@@ -1030,16 +1033,15 @@ TEMPLATES = {
 }
 
 
-
 def get_top_header_text(user_header: Optional[str] = None) -> str:
     """Read top header from user input or pick a random line from headers.txt."""
-    if user_header and user_header.strip():
+    if user_header and user_header.strip() and user_header.strip().lower() not in ("default", "none", "null"):
         return user_header.strip()
     headers_file = os.path.join(os.path.dirname(__file__), "headers.txt")
     if os.path.exists(headers_file):
         try:
             with open(headers_file, "r", encoding="utf-8") as f:
-                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+                lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
                 if lines:
                     return random.choice(lines)
         except Exception:
@@ -1047,33 +1049,38 @@ def get_top_header_text(user_header: Optional[str] = None) -> str:
     return "When Lyrics Feel Too Personal... 🤌🤍"
 
 
-def get_random_background_video() -> Optional[str]:
-    """Select a random background video clip from videos/input/."""
+def get_all_background_videos() -> List[str]:
+    """Retrieve all background video clips from videos/input/."""
     input_dir = os.path.join(os.path.dirname(__file__), "videos", "input")
     if os.path.exists(input_dir):
         exts = (".mp4", ".mov", ".mkv", ".webm", ".avi")
-        videos = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith(exts)]
-        if videos:
-            return random.choice(videos)
-    return None
+        return [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith(exts)]
+    return []
+
+
+def get_random_background_video() -> Optional[str]:
+    """Select a random background video clip from videos/input/."""
+    videos = get_all_background_videos()
+    return random.choice(videos) if videos else None
 
 
 def create_header_overlay_image(
     header_text: str,
     canvas_width: int = 1080,
     canvas_height: int = 1920,
-    top_margin_height: int = 420,
+    top_margin_height: int = 600,
     output_png_path: str = "header_overlay.png"
 ) -> str:
     """
     Renders a centered Georgia Italic header with inline Apple-style PNG emojis.
+    Positioned elegantly just above the video rectangle with a small gap.
     Saves a transparent RGBA image matching the canvas dimensions.
     """
     img = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
     scale = canvas_width / 1080.0
-    font_size = int(46 * scale)
+    font_size = int(32 * scale)
     font_paths = [
         "C:/Windows/Fonts/georgiai.ttf",
         "C:/Windows/Fonts/georgia.ttf",
@@ -1119,7 +1126,8 @@ def create_header_overlay_image(
             total_w += w
 
     start_x = max(10, (canvas_width - total_w) // 2)
-    y_pos = int((top_margin_height - font_size) // 2)
+    gap = int(24 * scale)
+    y_pos = int(top_margin_height - font_size - gap)
 
     curr_x = start_x
     for t_type, t_val, w in measured_tokens:
@@ -1146,6 +1154,7 @@ def create_header_overlay_image(
 
     img.save(output_png_path, "PNG")
     return output_png_path
+
 
 
 
@@ -1235,13 +1244,14 @@ def build_ass_and_lrc_content(
     elif is_yt_hindi:
         primary_color = "&H00FFFFFF"
         outline_color = "&H00000000"
-        back_color = "&H80000000"
+        back_color = "&H00000000"
         bold_val = 0
         scale_x_val = 100
         raw_spacing = int(spacing) if spacing is not None else 0
         strikeout_val = 0
-        outline_width = int(2 * scale_factor)
-        shadow_depth = int(2 * scale_factor)
+        outline_width = 0
+        shadow_depth = 0
+
     else:
         primary_color = tpl.get("primary_color", "&H00FFFFFF")
         outline_color = tpl.get("outline_color", "&H00000000")
@@ -1781,18 +1791,11 @@ def render_yt_hindi_video_ffmpeg(
         top_margin_height=top_margin,
         output_png_path=header_png
     )
-
-    bg_video = get_random_background_video()
-    if bg_video:
-        print(f"[YT Hindi] Selected background video: {os.path.basename(bg_video)}")
-    else:
-        print(f"[YT Hindi] Notice: No background videos found in videos/input/. Using black background.")
-
     fonts_dir = "fonts"
+
     normalized_ass = ass_path.replace("\\", "/")
     if ":" in normalized_ass:
         normalized_ass = normalized_ass.replace(":", "\\:")
-
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -1801,38 +1804,57 @@ def render_yt_hindi_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    normalized_header_png = header_png.replace("\\", "/")
-    if ":" in normalized_header_png:
-        normalized_header_png = normalized_header_png.replace(":", "\\:")
+    all_bg_videos = get_all_background_videos()
+    if all_bg_videos:
+        # Determine segments of ~4.5 to 6.5 seconds each
+        num_segments = max(1, math.ceil(duration / 5.0))
+        seg_dur = duration / num_segments
 
-    if bg_video and os.path.exists(bg_video):
-        filter_complex = (
-            f"[0:v]scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
-            f"crop={rect_w}:{rect_h},"
-            f"pad={res_w}:{res_h}:0:{top_margin}:color=black[bg];"
-            f"[bg][1:v]overlay=0:0[with_hdr];"
-            f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
+
+        selected_clips = []
+        last_clip = None
+        for _ in range(num_segments):
+            pool = [v for v in all_bg_videos if v != last_clip] or all_bg_videos
+            chosen = random.choice(pool)
+            selected_clips.append(chosen)
+            last_clip = chosen
+
+        print(f"[YT Hindi] Stitching {num_segments} background video clips ({seg_dur:.1f}s each)")
+
+        filter_parts = []
+        video_inputs = []
+        for i, clip_path in enumerate(selected_clips):
+            video_inputs.extend(["-stream_loop", "-1", "-i", clip_path])
+            filter_parts.append(
+                f"[{i}:v]trim=0:{seg_dur:.2f},setpts=PTS-STARTPTS,"
+                f"scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
+                f"crop={rect_w}:{rect_h},setsar=1,fps={fps}[v{i}];"
+            )
+
+        concat_inputs = "".join(f"[v{i}]" for i in range(num_segments))
+        filter_parts.append(f"{concat_inputs}concat=n={num_segments}:v=1:a=0[bg_rect];")
+        filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[bg];")
+
+        hdr_idx = num_segments
+        audio_idx = num_segments + 1
+
+        filter_parts.append(f"[bg][{hdr_idx}:v]overlay=0:0[with_hdr];")
+        filter_parts.append(f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]")
+
+        filter_complex = "".join(filter_parts)
+
+        ffmpeg_cmd = (
+            ["ffmpeg", "-y", "-threads", "0"] +
+            video_inputs +
+            ["-i", header_png, "-i", audio_path] +
+            ["-filter_complex", filter_complex] +
+            ["-map", "[v_out]", "-map", f"{audio_idx}:a"] +
+            ["-t", f"{duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
+            encoder_flags +
+            ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", output_path]
         )
-
-        ffmpeg_cmd = [
-            "ffmpeg", "-y",
-            "-threads", "0",
-            "-stream_loop", "-1", "-i", bg_video,
-            "-i", header_png,
-            "-i", audio_path,
-            "-filter_complex", filter_complex,
-            "-map", "[v_out]", "-map", "2:a",
-            "-t", f"{duration:.2f}",
-            "-r", str(fps),
-            "-c:v", encoder_name,
-        ] + encoder_flags + [
-            "-pix_fmt", "yuv420p",
-            "-c:a", "aac",
-            "-b:a", "192k",
-            "-movflags", "+faststart",
-            output_path
-        ]
     else:
+        print(f"[YT Hindi] Notice: No background videos found in videos/input/. Using black background.")
         filter_complex = (
             f"[0:v][1:v]overlay=0:0[with_hdr];"
             f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
@@ -1855,6 +1877,7 @@ def render_yt_hindi_video_ffmpeg(
             "-movflags", "+faststart",
             output_path
         ]
+
 
     emit_progress("ffmpeg_rendering", 85, f"Hardware encoding {res_w}x{res_h} video with {encoder_name}...")
     subprocess.run(ffmpeg_cmd, check=True)

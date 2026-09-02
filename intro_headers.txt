@@ -1,6 +1,18 @@
 # Add one intro header per line. A random intro header is selected for the Film Burn Intro.
-Wear headphones for the best experience 🎧✨
-Let the music take over... 🌧️🤍
+# Supported dynamic tags:
+#   {song_name} -> replaced by current song title
+#   {duration}  -> replaced by duration (e.g. "30")
+#   {text}yellow -> highlighted in warm aesthetic yellow/amber (#FFD43F)
+#   Inline Apple emojis (🤌, ✨, 🤍, ❤️‍🩹, etc.) are fully rendered
+
 Close your eyes and feel the music 🤌✨
-A song that feels like home 🫶🤍
-When the intro hits just right... 🤌🌧️
+{duration} seconds of {"{song_name}"}yellow
+This Lyrics hits diffrent🤍
+Addiction is bad but, {This Masterpiece>>>}yellow
+Pov: you are tired of {everything>>}yellow
+Whole song is good, but {this part>>}yellow
+When {lyrics}yellow feel too personal
+This part of {"{song_name}"}yellow
+Obsessed with {"{song_name}"}yellow ❤️‍🩹
+To that one {person}yellow>>>
+Me to my {favourite}yellow person >>

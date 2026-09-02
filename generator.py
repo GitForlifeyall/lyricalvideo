@@ -1319,22 +1319,44 @@ def get_top_header_text(user_header: Optional[str] = None) -> str:
     return "When Lyrics Feel Too Personal... 🤌🤍"
 
 
-def get_intro_header_text(user_intro: Optional[str] = None) -> str:
-    """Read intro text from user input or pick a random line from intro_headers.txt."""
+def get_intro_header_text(user_intro: Optional[str] = None, song_title: str = "", duration: float = 0.0) -> str:
+    """Read intro text from user input or pick a random line from intro_headers.txt, dynamically populating placeholders."""
+    raw_text = ""
     if user_intro and user_intro.strip():
         cleaned = user_intro.strip()
         if cleaned.lower() not in ("default", "none", "null"):
-            return cleaned
-    intro_file = os.path.join(os.path.dirname(__file__), "intro_headers.txt")
-    if os.path.exists(intro_file):
-        try:
-            with open(intro_file, "r", encoding="utf-8") as f:
-                lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
-                if lines:
-                    return random.choice(lines)
-        except Exception:
-            pass
-    return "Wear headphones for the best experience 🎧✨"
+            raw_text = cleaned
+
+    if not raw_text:
+        intro_file = os.path.join(os.path.dirname(__file__), "intro_headers.txt")
+        if os.path.exists(intro_file):
+            try:
+                with open(intro_file, "r", encoding="utf-8") as f:
+                    lines = [l.strip() for l in f if l.strip() and not l.strip().startswith("#")]
+                    if lines:
+                        raw_text = random.choice(lines)
+            except Exception:
+                pass
+
+    if not raw_text:
+        raw_text = "Close your eyes and feel the music 🤌✨"
+
+    clean_title = song_title.strip() if song_title else "This Song"
+    clean_title = re.sub(r'[\(\[\{].*?(official|video|audio|lyrics|feat|ft\.).*?[\)\]\}]', '', clean_title, flags=re.IGNORECASE).strip()
+    if not clean_title:
+        clean_title = song_title.strip() or "This Song"
+
+    dur_str = str(int(round(duration))) if duration > 0 else "30"
+
+    formatted = raw_text
+    formatted = re.sub(r'\{song_name\}', clean_title, formatted, flags=re.IGNORECASE)
+    formatted = re.sub(r'\{duration\}', dur_str, formatted, flags=re.IGNORECASE)
+    formatted = re.sub(r'\(Duration\)', dur_str, formatted, flags=re.IGNORECASE)
+    formatted = re.sub(r'\(song name\)', clean_title, formatted, flags=re.IGNORECASE)
+    formatted = re.sub(r'"song name"', clean_title, formatted, flags=re.IGNORECASE)
+    formatted = re.sub(r'\+citadel-font', '', formatted, flags=re.IGNORECASE)
+
+    return formatted
 
 
 
@@ -1456,7 +1478,10 @@ def create_intro_overlay_image(
     output_png_path: str = "intro_overlay.png"
 ) -> str:
     """
-    Renders centered intro text with inline Apple emojis centered on the canvas.
+    Renders centered intro text supporting:
+    1. {highlighted text}yellow syntax -> warm aesthetic yellow (#FFD43F)
+    2. Default white text -> (255, 255, 255, 245)
+    3. Inline Apple emojis composited from emoji_assets
     """
     img = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
     if not intro_text or not intro_text.strip():
@@ -1483,44 +1508,62 @@ def create_intro_overlay_image(
     if font is None:
         font = ImageFont.load_default()
 
+    # Parse spans for yellow highlights: e.g. {This Masterpiece>>>}yellow or (word)yellow
+    span_pattern = re.compile(r'(?:\{([^}]+)\}|\(([^)]+)\))\s*yellow', re.IGNORECASE)
+    chunks = []
+    last_end = 0
+    for m in span_pattern.finditer(intro_text):
+        if m.start() > last_end:
+            chunks.append((intro_text[last_end:m.start()], False))
+        highlighted = m.group(1) or m.group(2) or ""
+        chunks.append((highlighted, True))
+        last_end = m.end()
+    if last_end < len(intro_text):
+        chunks.append((intro_text[last_end:], False))
+
     emoji_pattern = re.compile(
         r'([𐀀-􏿿][︀-️]?|[☀-➿][︀-️]?|❤[︀-️]?)'
     )
     tokens = []
-    last_idx = 0
-    for m in emoji_pattern.finditer(intro_text):
-        if m.start() > last_idx:
-            txt_part = re.sub(r'[︀-️]', '', intro_text[last_idx:m.start()])
+    WHITE_COLOR = (255, 255, 255, 245)
+    YELLOW_COLOR = (255, 212, 63, 255)
+
+    for chunk_text, is_yellow in chunks:
+        color = YELLOW_COLOR if is_yellow else WHITE_COLOR
+        last_idx = 0
+        for m in emoji_pattern.finditer(chunk_text):
+            if m.start() > last_idx:
+                txt_part = re.sub(r'[︀-️]', '', chunk_text[last_idx:m.start()])
+                if txt_part:
+                    tokens.append(("text", txt_part, color))
+            tokens.append(("emoji", m.group(), color))
+            last_idx = m.end()
+        if last_idx < len(chunk_text):
+            txt_part = re.sub(r'[︀-️]', '', chunk_text[last_idx:])
             if txt_part:
-                tokens.append(("text", txt_part))
-        tokens.append(("emoji", m.group()))
-        last_idx = m.end()
-    if last_idx < len(intro_text):
-        txt_part = re.sub(r'[︀-️]', '', intro_text[last_idx:])
-        if txt_part:
-            tokens.append(("text", txt_part))
+                tokens.append(("text", txt_part, color))
 
     emoji_size = int(font_size * 1.1)
     measured_tokens = []
     total_w = 0
-    for t_type, t_val in tokens:
+    for t_type, t_val, color in tokens:
         if t_type == "text":
             bbox = draw.textbbox((0, 0), t_val, font=font)
             w = bbox[2] - bbox[0]
-            measured_tokens.append((t_type, t_val, w))
+            measured_tokens.append((t_type, t_val, color, w))
             total_w += w
         else:
             w = emoji_size + int(6 * scale)
-            measured_tokens.append((t_type, t_val, w))
+            measured_tokens.append((t_type, t_val, color, w))
             total_w += w
 
     start_x = max(10, (canvas_width - total_w) // 2)
     y_pos = int((canvas_height - font_size) // 2)
 
     curr_x = start_x
-    for t_type, t_val, w in measured_tokens:
+    for t_type, t_val, color, w in measured_tokens:
         if t_type == "text":
-            draw.text((curr_x, y_pos), t_val, font=font, fill=(255, 255, 255, 245))
+            draw.text((curr_x, y_pos), t_val, font=font, fill=color)
             curr_x += w
         else:
             hex_code = "-".join(f"{ord(c):x}" for c in t_val if ord(c) != 0xfe0f).lower()
@@ -2226,6 +2269,7 @@ def render_yt_hindi_video_ffmpeg(
     cues: Optional[List[Any]] = None,
     film_burn_intro: bool = False,
     intro_header: Optional[str] = None,
+    song_title: str = "",
 ) -> str:
     """
     Renders complete YT Hindi Type video where:
@@ -2262,7 +2306,7 @@ def render_yt_hindi_video_ffmpeg(
     if film_burn_intro:
         first_lyric_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 3.0)
         burn_dur = min(4.0, first_lyric_start) if first_lyric_start >= 2.0 else 3.0
-        intro_text = get_intro_header_text(intro_header)
+        intro_text = get_intro_header_text(intro_header, song_title=song_title, duration=duration or 0.0)
         intro_png = os.path.join(temp_dir, f"intro_{int(time.time()*1000)}.png")
         create_intro_overlay_image(
             intro_text=intro_text,
@@ -2675,7 +2719,8 @@ def generate_lyric_video(
             end_seconds=test_end,
             cues=structured_lines,
             film_burn_intro=(tpl_id == "yt_hindi_intro"),
-            intro_header=intro_header
+            intro_header=intro_header,
+            song_title=yt_data.get("title") or song_query
         )
 
     elif clean_base:

@@ -21,6 +21,10 @@ import time
 import requests
 import yt_dlp
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from film_burn_intro import generate_film_burn_filters
+
+YT_HINDI_TRANSITION_SECONDS = 0.42
+
 
 # Force UTF-8 on Windows consoles to prevent cp1252 charmap encoding errors
 if hasattr(sys.stdout, "reconfigure"):
@@ -354,6 +358,68 @@ SPOTIFY_LYRICS_API_URL = os.environ.get("SPOTIFY_LYRICS_API_URL", "http://localh
 SPOTIFY_SP_DC = os.environ.get("SPOTIFY_SP_DC", "")
 SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
 SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+
+
+def fetch_spotify_track_metadata(spotify_url: str) -> Dict[str, Any]:
+    """Read public Spotify track metadata used for accurate YouTube matching.
+
+    This follows Sunnify's approach: Spotify supplies metadata only; yt-dlp
+    still downloads the permitted audio source from YouTube.
+    """
+    match = re.search(
+        r"(?:open\.spotify\.com/track/|spotify:track:)([A-Za-z0-9]{22})",
+        spotify_url,
+    )
+    if not match:
+        return {}
+
+    track_id = match.group(1)
+    try:
+        response = requests.get(
+            f"https://open.spotify.com/embed/track/{track_id}",
+            headers={"User-Agent": BROWSER_HEADERS["User-Agent"]},
+            timeout=8,
+        )
+        response.raise_for_status()
+        next_data = re.search(
+            r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>',
+            response.text,
+        )
+        if not next_data:
+            return {}
+        payload = json.loads(next_data.group(1))
+
+        def find_track(node: Any) -> Optional[Dict[str, Any]]:
+            if isinstance(node, dict):
+                if (node.get("duration") or 0) and (node.get("name") or node.get("title")):
+                    return node
+                for value in node.values():
+                    found = find_track(value)
+                    if found:
+                        return found
+            elif isinstance(node, list):
+                for value in node:
+                    found = find_track(value)
+                    if found:
+                        return found
+            return None
+
+        entity = find_track(payload) or {}
+        artists_data = entity.get("artists") or []
+        if isinstance(artists_data, list):
+            artists = ", ".join(
+                str(item.get("name", "")) for item in artists_data if isinstance(item, dict)
+            ).strip()
+        else:
+            artists = str(entity.get("subtitle") or "").strip()
+        return {
+            "title": str(entity.get("name") or entity.get("title") or "").strip(),
+            "artists": artists,
+            "duration": float(entity.get("duration") or 0) / 1000.0,
+        }
+    except Exception as exc:
+        emit_progress("spotify_metadata_warning", 42, f"Spotify metadata lookup unavailable: {type(exc).__name__}")
+        return {}
 
 
 def fetch_spotify_lyrics(song_title: str, artist_name: str = "", duration: float = 0.0) -> Tuple[List[Tuple[float, float, str]], str]:
@@ -697,19 +763,31 @@ def download_youtube_audio(
             pass
 
     is_youtube_url = ("youtube.com" in query_or_url or "youtu.be" in query_or_url)
+    is_search_query = False
+    spotify_metadata: Dict[str, Any] = {}
+    expected_duration = 0.0
+    expected_title = ""
+    expected_artists = ""
     if "spotify.com/track/" in query_or_url or query_or_url.startswith("spotify:track:"):
-        sp_title = query_or_url
+        spotify_metadata = fetch_spotify_track_metadata(query_or_url)
+        expected_title = spotify_metadata.get("title") or ""
+        expected_artists = spotify_metadata.get("artists") or ""
+        expected_duration = float(spotify_metadata.get("duration") or 0)
+        sp_title = f"{expected_artists} - {expected_title}".strip(" -") or query_or_url
         try:
-            oembed_resp = requests.get(f"https://open.spotify.com/oembed?url={query_or_url}", timeout=4)
-            if oembed_resp.ok:
-                sp_title = oembed_resp.json().get("title", query_or_url)
+            if not expected_title:
+                oembed_resp = requests.get(f"https://open.spotify.com/oembed?url={query_or_url}", timeout=4)
+                if oembed_resp.ok:
+                    sp_title = oembed_resp.json().get("title", query_or_url)
         except Exception:
             pass
-        search_target = f"ytsearch1:{sp_title}"
+        search_target = f"ytsearch20:{sp_title}"
+        is_search_query = True
     elif is_youtube_url:
         search_target = query_or_url
     else:
-        search_target = f"ytsearch1:{query_or_url}"
+        search_target = f"ytsearch20:{query_or_url}"
+        is_search_query = True
 
 
     ydl_opts = {
@@ -742,6 +820,103 @@ def download_youtube_audio(
     emit_progress("ytdlp_downloading", 35, f"Extracting audio track and fetching captions in '{target_lang}'...")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        # A plain YouTube search can return several versions of a track.
+        # Select the result with the most representative runtime. A pasted
+        # URL remains authoritative and is never silently replaced.
+        if is_search_query:
+            search_opts = dict(ydl_opts)
+            # Flat search entries frequently omit the channel and catalogue
+            # metadata needed to distinguish Topic audio from uploads.
+            search_opts["extract_flat"] = False
+            with yt_dlp.YoutubeDL(search_opts) as search_ydl:
+                search_info = search_ydl.extract_info(search_target, download=False)
+            candidates = search_info.get("entries", []) if isinstance(search_info, dict) else []
+            candidates = [
+                item for item in candidates
+                if item and (item.get("webpage_url") or item.get("url"))
+            ]
+            duration_values = sorted(
+                float(item.get("duration") or 0)
+                for item in candidates
+                if float(item.get("duration") or 0) > 0
+            )
+            median_duration = (
+                duration_values[len(duration_values) // 2]
+                if duration_values
+                else 0.0
+            )
+            if len(duration_values) % 2 == 0 and duration_values:
+                median_duration = (
+                    duration_values[len(duration_values) // 2 - 1] + median_duration
+                ) / 2.0
+
+            def duration_score(item: Dict[str, Any]) -> int:
+                # Prefer the result closest to the common runtime returned by
+                # YouTube search, avoiding snippets, edits, and outliers.
+                item_duration = float(item.get("duration") or 0)
+                if median_duration and item_duration:
+                    duration_delta = abs(item_duration - median_duration)
+                    return max(0, int(160 - min(160, duration_delta * 8)))
+                return 0
+
+            if candidates:
+                # For Spotify links, compare against Spotify's exact track
+                # duration and title. This is Sunnify's key matching step.
+                selection_pool = candidates
+                if expected_title:
+                    title_core = re.sub(r"[^\w\s]", " ", expected_title.lower())
+                    title_matches = [
+                        item for item in candidates
+                        if title_core and title_core in re.sub(
+                            r"[^\w\s]", " ", (item.get("title") or "").lower()
+                        )
+                    ]
+                    if title_matches:
+                        selection_pool = title_matches
+                        artist_tokens = [
+                            token.strip().lower()
+                            for token in re.split(r"[,&]+|\s+(?:feat\.?|ft\.?)\s+", expected_artists, flags=re.I)
+                            if token.strip()
+                        ]
+                        if artist_tokens:
+                            artist_matches = [
+                                item for item in title_matches
+                                if any(
+                                    token in (item.get("title") or "").lower()
+                                    for token in artist_tokens
+                                )
+                            ]
+                            if artist_matches:
+                                selection_pool = artist_matches
+
+                if expected_duration and any(item.get("duration") for item in selection_pool):
+                    def spotify_match_key(item: Dict[str, Any]) -> Tuple[float, int]:
+                        item_title = (item.get("title") or "").lower()
+                        unwanted_variant = bool(re.search(
+                            r"\b(?:8d|slowed|reverb|nightcore|sped\s*up|remix|edit|live|karaoke|cover|bass\s*boost(?:ed)?)\b",
+                            item_title,
+                        ))
+                        return (
+                            abs(float(item["duration"]) - expected_duration),
+                            1 if unwanted_variant else 0,
+                        )
+
+                    selected = min(
+                        (item for item in selection_pool if item.get("duration")),
+                        key=spotify_match_key,
+                    )
+                    if abs(float(selected["duration"]) - expected_duration) > 30:
+                        raise yt_dlp.utils.DownloadError(
+                            "No YouTube result matched the Spotify title and duration closely enough."
+                        )
+                else:
+                    selected = max(selection_pool, key=duration_score)
+                selected_url = selected.get("webpage_url") or selected.get("url")
+                if selected_url:
+                    search_target = selected_url
+                    comparison_duration = expected_duration or median_duration
+                    emit_progress("ytdlp_source_selected", 34, f"Selected the YouTube result closest to the Spotify track duration ({comparison_duration:.1f}s)...")
+
         info = ydl.extract_info(search_target, download=True)
         video_info = info["entries"][0] if "entries" in info and len(info["entries"]) > 0 else info
 
@@ -1029,6 +1204,25 @@ TEMPLATES = {
         "scale_x": 100,
         "blur": 0.0,
         "force_lowercase": False,
+    },
+    "yt_hindi_intro": {
+        "id": "yt_hindi_intro",
+        "name": "YT Hindi (Film Burn Intro)",
+        "aspect_ratio": "portrait",
+        "font_name": "EB Garamond",
+        "font_size": 38,
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": 0,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 0,
+        "bg_color": "black",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
+        "film_burn_intro": True,
     }
 }
 
@@ -1256,12 +1450,12 @@ def build_ass_and_lrc_content(
     custom typography, dynamic reflow, and interactive dynamic placement (Center default).
     """
     tpl_id = (template_key or "").lower().strip()
-    is_yt_hindi = (tpl_id == "yt_hindi_type")
+    is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
     elif is_yt_hindi:
-        tpl = TEMPLATES["yt_hindi_type"]
+        tpl = TEMPLATES.get(tpl_id, TEMPLATES["yt_hindi_type"])
         is_brat = False
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
@@ -1846,6 +2040,7 @@ def render_yt_hindi_video_ffmpeg(
     start_seconds: float = 0.0,
     end_seconds: Optional[float] = None,
     cues: Optional[List[Any]] = None,
+    film_burn_intro: bool = False,
 ) -> str:
     """
     Renders complete YT Hindi Type video where:
@@ -1863,7 +2058,9 @@ def render_yt_hindi_video_ffmpeg(
     res_h = 960 if is_fast else 1920
     fps = 24 if is_fast else 30
     rect_w = res_w
-    rect_h = int(res_w * 720 / 1080)  # 1080x720 rectangle on 1080p (540x360 on 540p)
+    # YT Hindi Type keeps its portrait canvas, but uses a square real-video
+    # area in the center (1080x1080 final / 540x540 fast preview).
+    rect_h = res_w if is_yt_hindi else int(res_w * 720 / 1080)
     top_margin = (res_h - rect_h) // 2  # 600px margin top and bottom on 1080p
 
     header_text = get_top_header_text(top_header)
@@ -1884,13 +2081,23 @@ def render_yt_hindi_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    # Build timeline segments synced exactly to each lyric line: [(seg_start, seg_dur, lyric_text, fade_out_st)]
-    timeline_segments: List[Tuple[float, float, str, float]] = []
+    # Build contiguous timeline segments synced to each lyric line:
+    # [(seg_start, seg_dur, lyric_text, fade_out_st, fade_out_d)]
+    #
+    # The segments are concatenated below, so their durations must add up to
+    # the output duration exactly.  Do not impose a per-line minimum here:
+    # closely spaced cues are valid and a minimum would make the video drift
+    # ahead of the audio.
+    timeline_segments: List[Tuple[float, float, str, float, float]] = []
     if cues and len(cues) > 0:
         # Check intro gap before first lyric
         first_start = cues[0]["timeSeconds"] if isinstance(cues[0], dict) else cues[0][0]
-        if first_start > 0.35:
-            timeline_segments.append((0.0, first_start, "", max(0.0, first_start - 0.42)))
+        # Preserve even short leading silence; dropping it shifts every lyric
+        # and transition earlier than the audio.
+        if first_start > 0.001:
+            intro_dur = min(duration, first_start)
+            intro_fade_st = max(0.0, intro_dur - YT_HINDI_TRANSITION_SECONDS)
+            timeline_segments.append((0.0, intro_dur, "", intro_fade_st, min(YT_HINDI_TRANSITION_SECONDS, intro_dur - intro_fade_st)))
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
@@ -1902,18 +2109,30 @@ def render_yt_hindi_video_ffmpeg(
             else:
                 seg_end = duration
 
-            seg_dur = max(0.6, seg_end - s_t)
-            line_sing_dur = max(0.2, e_t - s_t)
+            # Keep every cue inside the rendered timeline and preserve the
+            # exact interval up to the next cue.  The final cue ends at the
+            # audio duration, so concatenation remains sample/timestamp aligned.
+            s_t = max(0.0, min(duration, float(s_t)))
+            seg_end = max(s_t, min(duration, float(seg_end)))
+            seg_dur = seg_end - s_t
+            if seg_dur <= 0.001:
+                continue
 
-            # Transition starts AFTER the line ends
-            fade_out_st = max(line_sing_dur, seg_dur - 0.42)
-            fade_out_st = min(fade_out_st, max(0.0, seg_dur - 0.42))
+            line_sing_dur = max(0.0, float(e_t) - float(s_t))
 
-            timeline_segments.append((s_t, seg_dur, txt, fade_out_st))
+            # Start fading only after the sung portion. If less than 0.42s
+            # remains, shorten the fade rather than moving it earlier.
+            fade_out_st = min(seg_dur, line_sing_dur)
+            fade_out_d = min(YT_HINDI_TRANSITION_SECONDS, max(0.0, seg_dur - fade_out_st))
+
+            timeline_segments.append((s_t, seg_dur, txt, fade_out_st, fade_out_d))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
-        timeline_segments = [(i * seg_dur, seg_dur, "", max(0.0, seg_dur - 0.42)) for i in range(num_seg)]
+        timeline_segments = [
+            (i * seg_dur, seg_dur, "", max(0.0, seg_dur - YT_HINDI_TRANSITION_SECONDS), min(YT_HINDI_TRANSITION_SECONDS, seg_dur))
+            for i in range(num_seg)
+        ]
 
     all_bg_videos = get_all_background_videos()
     lyric_png_paths = []
@@ -1921,16 +2140,25 @@ def render_yt_hindi_video_ffmpeg(
         num_segments = len(timeline_segments)
         selected_clips = []
         last_clip = None
+        shuffled_pool = []
         for _ in range(num_segments):
-            pool = [v for v in all_bg_videos if v != last_clip] or all_bg_videos
-            chosen = random.choice(pool)
+            if not shuffled_pool:
+                shuffled_pool = list(all_bg_videos)
+                random.shuffle(shuffled_pool)
+                # Keep the cycle boundary from repeating the previous clip.
+                if len(shuffled_pool) > 1 and shuffled_pool[-1] == last_clip:
+                    swap_index = random.randrange(len(shuffled_pool) - 1)
+                    shuffled_pool[-1], shuffled_pool[swap_index] = (
+                        shuffled_pool[swap_index], shuffled_pool[-1]
+                    )
+            chosen = shuffled_pool.pop()
             selected_clips.append(chosen)
             last_clip = chosen
 
         print(f"[YT Hindi] Merging {num_segments} per-lyric video clips + lyric text overlays with synchronized fading")
 
         # Generate lyric text PNG overlay for each segment (strictly scaled to never exceed 82% video width)
-        for i, (seg_start, seg_dur, seg_text, fade_out_st) in enumerate(timeline_segments):
+        for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
             png_path = os.path.join(temp_dir, f"lyric_seg_{int(time.time()*1000)}_{i}.png")
             create_lyric_line_overlay_image(
                 text=seg_text,
@@ -1952,11 +2180,10 @@ def render_yt_hindi_video_ffmpeg(
             png_inputs.extend(["-i", p])
 
         filter_parts = []
-        for i, (seg_start, seg_dur, seg_text, fade_out_st) in enumerate(timeline_segments):
+        for i, (seg_start, seg_dur, seg_text, fade_out_st, fade_out_d) in enumerate(timeline_segments):
             v_idx = i
             png_idx = num_segments + i
-            fade_in_d = min(0.42, seg_dur / 2.0)
-            fade_out_d = min(0.42, max(0.1, seg_dur - fade_out_st))
+            fade_in_d = min(YT_HINDI_TRANSITION_SECONDS, seg_dur / 2.0)
             # Scale video clip
             filter_parts.append(
                 f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
@@ -1968,10 +2195,10 @@ def render_yt_hindi_video_ffmpeg(
                 f"[bg{i}][{png_idx}:v]overlay=0:0[merged{i}];"
             )
             # Apply fade in & fade out to the MERGED (video + text) segment
-            filter_parts.append(
-                f"[merged{i}]fade=t=in:st=0:d={fade_in_d:.2f},"
-                f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.2f}[v{i}];"
-            )
+            fade_filters = [f"fade=t=in:st=0:d={fade_in_d:.3f}"]
+            if fade_out_d > 0.001:
+                fade_filters.append(f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.3f}")
+            filter_parts.append(f"[merged{i}]" + ",".join(fade_filters) + f"[v{i}];")
 
 
 
@@ -1983,7 +2210,14 @@ def render_yt_hindi_video_ffmpeg(
         hdr_idx = 2 * num_segments
         audio_idx = 2 * num_segments + 1
 
-        filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
+        if film_burn_intro:
+            burn_dur = min(3.0, timeline_segments[0][1] if timeline_segments else 3.0)
+            burn_filter_str, _ = generate_film_burn_filters(intro_duration=burn_dur)
+            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s)")
+            filter_parts.append(f"[canvas]{burn_filter_str}[burned];")
+            filter_parts.append(f"[burned][{hdr_idx}:v]overlay=0:0[v_out]")
+        else:
+            filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
 
         filter_complex = "".join(filter_parts)
 
@@ -2128,7 +2362,13 @@ def generate_lyric_video(
             target_lang=lang
         )
         audio_path = yt_data["audio_path"]
-        duration = yt_data["duration"] or get_audio_duration(audio_path)
+        if is_yt_hindi:
+            # The downloaded/converted audio is the timing authority for this
+            # template. YouTube metadata can differ by padding or encoder
+            # delay and cause the concatenated lyric timeline to drift.
+            duration = get_audio_duration(audio_path) or yt_data["duration"]
+        else:
+            duration = yt_data["duration"]
 
     # If no usable lyrics found across all providers, stop before FFmpeg rendering
     if not yt_data.get("cues"):
@@ -2199,7 +2439,8 @@ def generate_lyric_video(
             preview_quality=preview_quality,
             start_seconds=test_start,
             end_seconds=test_end,
-            cues=structured_lines
+            cues=structured_lines,
+            film_burn_intro=(tpl_id == "yt_hindi_intro")
         )
 
     elif clean_base:

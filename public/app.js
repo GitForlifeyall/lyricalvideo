@@ -168,7 +168,7 @@ function setupEventListeners() {
       state.template = pill.dataset.template;
 
       const isBrat = ['template4_brat', 'template_4_brat', 'brat'].includes(state.template);
-      const isYtHindi = state.template === 'yt_hindi_type';
+      const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
 
       if (isBrat) {
         if (bratOptionsRow) bratOptionsRow.style.display = 'flex';
@@ -188,7 +188,11 @@ function setupEventListeners() {
         fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'EB Garamond'));
         state.topHeader = ytHindiTopHeaderInput ? ytHindiTopHeaderInput.value : '(When Lyrics feel Too Personal...)';
         applyRealtimePlacementAndSize();
-        showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
+        if (state.template === 'yt_hindi_intro') {
+          showToast('🔥 YT Hindi (Film Burn Intro) activated — vintage procedural film burn intro enabled!');
+        } else {
+          showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
+        }
       } else {
         if (bratOptionsRow) bratOptionsRow.style.display = 'none';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
@@ -845,7 +849,7 @@ function startGenerationPipeline(query, burnText = false) {
   pipelineSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
   // Connect to SSE Endpoint
-  const isYtHindi = state.template === 'yt_hindi_type';
+  const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
   const topHeaderParam = isYtHindi ? `&top_header=${encodeURIComponent(state.topHeader || '')}` : '';
   const testStartParam = Number(state.testStart) > 0 ? `&start_seconds=${encodeURIComponent(state.testStart)}` : '';
   const testEndParam = Number(state.testEnd) > 0 ? `&end_seconds=${encodeURIComponent(state.testEnd)}` : '';

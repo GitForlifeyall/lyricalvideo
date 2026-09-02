@@ -1893,21 +1893,14 @@ def render_yt_hindi_video_ffmpeg(
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
-            e_t = item["endSeconds"] if isinstance(item, dict) else item[1]
             txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
             if idx + 1 < len(cues):
                 next_start = cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]
                 seg_end = next_start
             else:
-                seg_end = min(duration, e_t)
+                seg_end = duration
             seg_dur = max(0.4, seg_end - s_t)
             timeline_segments.append((s_t, seg_dur, txt))
-
-        # Check outro gap after last lyric
-        last_item = cues[-1]
-        last_end = last_item["endSeconds"] if isinstance(last_item, dict) else last_item[1]
-        if last_end < duration - 0.4:
-            timeline_segments.append((last_end, duration - last_end, ""))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
@@ -1952,7 +1945,7 @@ def render_yt_hindi_video_ffmpeg(
         for i, (seg_start, seg_dur, seg_text) in enumerate(timeline_segments):
             v_idx = i
             png_idx = num_segments + i
-            fade_dur = min(0.24, seg_dur / 3.0)
+            fade_dur = min(0.48, max(0.32, seg_dur * 0.22)) if seg_dur >= 1.5 else min(0.30, seg_dur / 3.0)
             # Scale video clip
             filter_parts.append(
                 f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
@@ -1968,6 +1961,7 @@ def render_yt_hindi_video_ffmpeg(
                 f"[merged{i}]fade=t=in:st=0:d={fade_dur:.2f},"
                 f"fade=t=out:st={max(0, seg_dur - fade_dur):.3f}:d={fade_dur:.2f}[v{i}];"
             )
+
 
         # Concatenate all merged segments
         concat_inputs = "".join(f"[v{i}]" for i in range(num_segments))

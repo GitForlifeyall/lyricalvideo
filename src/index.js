@@ -22,6 +22,16 @@ if (!fs.existsSync(LYRICS_DIR)) fs.mkdirSync(LYRICS_DIR, { recursive: true });
 if (!fs.existsSync(VIDEO_INPUT_DIR)) fs.mkdirSync(VIDEO_INPUT_DIR, { recursive: true });
 if (!fs.existsSync(VIDEO_OUTPUT_DIR)) fs.mkdirSync(VIDEO_OUTPUT_DIR, { recursive: true });
 
+export function getPythonExecutable() {
+  const rootDir = path.join(__dirname, '..');
+  const isWindows = process.platform === 'win32';
+  const venv310Py = path.join(rootDir, '.venv310', isWindows ? 'Scripts/python.exe' : 'bin/python');
+  if (fs.existsSync(venv310Py)) return venv310Py;
+  const venvPy = path.join(rootDir, '.venv', isWindows ? 'Scripts/python.exe' : 'bin/python');
+  if (fs.existsSync(venvPy)) return venvPy;
+  return 'python';
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -173,7 +183,8 @@ app.get('/api/generate-video-stream', async (req, res) => {
   }
   pythonArgs.push(`--preview-quality=${previewQuality}`);
 
-  const pythonProcess = spawn('python', pythonArgs, {
+  const pyExecutable = getPythonExecutable();
+  const pythonProcess = spawn(pyExecutable, pythonArgs, {
     cwd: path.join(__dirname, '..')
   });
 
@@ -298,7 +309,8 @@ app.post('/api/quick-burn-video', async (req, res) => {
     if (spacing !== undefined && spacing !== '') pythonArgs.push(`--spacing=${spacing}`);
     if (word_spacing !== undefined && word_spacing !== '') pythonArgs.push(`--word-spacing=${word_spacing}`);
 
-    const py = spawn('python', pythonArgs, { cwd: path.join(__dirname, '..') });
+    const pyExecutable = getPythonExecutable();
+    const py = spawn(pyExecutable, pythonArgs, { cwd: path.join(__dirname, '..') });
 
     py.on('close', (code) => {
       if (code === 0 && fs.existsSync(videoOutputPath)) {

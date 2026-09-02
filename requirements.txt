@@ -1,6 +1,7 @@
 requests>=2.31.0
 yt-dlp>=2024.0.0
 beautifulsoup4>=4.12.3
-opencv-python>=4.8.0
-numpy>=1.24.0
+opencv-python<5
+numpy==1.26.4
 Pillow>=10.0.0
+ai4bharat-transliteration==1.1.3

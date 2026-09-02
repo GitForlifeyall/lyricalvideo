@@ -8,6 +8,8 @@ import os
 import re
 import sys
 import json
+import glob
+import random
 import textwrap
 import subprocess
 from pathlib import Path
@@ -17,6 +19,15 @@ import time
 import requests
 import yt_dlp
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+
+# Force UTF-8 on Windows consoles to prevent cp1252 charmap encoding errors
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 
 
 def format_brat_multiline(text: str, max_chars_per_line: int = 15) -> str:
@@ -124,6 +135,7 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str 
         if not chosen_fmt or not chosen_fmt.get("url"):
             continue
 
+        is_manual = kind.startswith("manual")
         try:
             url = chosen_fmt["url"]
             resp = requests.get(url, headers=BROWSER_HEADERS, timeout=10)
@@ -132,17 +144,34 @@ def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str 
                     data = resp.json()
                     cues = parse_json3_timedtext(data)
                     if cues:
-                        print(f"[Subtitles] Selected '{lang_key}' ({kind}) with {len(cues)} lines")
-                        return cues, lang_key
+                        print(f"[Subtitles] Selected '{lang_key}' ({kind}) with {len(cues)} lines (manual={is_manual})")
+                        return cues, lang_key, is_manual
                 else:
                     cues = parse_vtt_text(resp.text)
                     if cues:
-                        print(f"[Subtitles] Selected VTT '{lang_key}' ({kind}) with {len(cues)} lines")
-                        return cues, lang_key
+                        print(f"[Subtitles] Selected VTT '{lang_key}' ({kind}) with {len(cues)} lines (manual={is_manual})")
+                        return cues, lang_key, is_manual
         except Exception as e:
             print(f"[Warning] Failed to fetch subtitles for {lang_key}: {e}")
 
-    return [], "none"
+    return [], "none", False
+
+
+
+def is_lyric_metadata(text: str) -> bool:
+    """Reject subtitle metadata/descriptions that are not actual lyric lines."""
+    normalized = re.sub(r"\s+", " ", str(text or "")).strip().lower()
+    if not normalized:
+        return True
+    metadata_phrases = (
+        "music playing", "native youtube audio", "instrumental", "music only",
+        "applause", "cheering", "speaking foreign language", "inaudible",
+        "[music]", "(music)", "music", "♪", "♫"
+    )
+    clean_no_brackets = re.sub(r"[\[\]\(\)\{\}\-♪♫]", " ", normalized).strip()
+    if clean_no_brackets in ("music", "music playing", "native youtube audio", "instrumental", "applause", "cheering", ""):
+        return True
+    return any(phrase in normalized for phrase in metadata_phrases if len(phrase) > 5)
 
 
 def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]]:
@@ -160,7 +189,7 @@ def parse_json3_timedtext(data: Dict[str, Any]) -> List[Tuple[float, float, str]
         clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
         clean_text = " ".join(clean_text.split())
 
-        if clean_text and clean_text != "\n":
+        if clean_text and clean_text != "\n" and not is_lyric_metadata(clean_text):
             dur = t_dur if t_dur > 0 else 2.5
             end_sec = max(t_start + 1.5, t_start + dur)
             cues.append((t_start, end_sec, clean_text))
@@ -199,7 +228,7 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
         clean_text = " ".join(clean_text.split())
         clean_text = clean_text.replace("♪", "").replace("♫", "").strip()
 
-        if clean_text:
+        if clean_text and not is_lyric_metadata(clean_text):
             if end_sec <= start_sec:
                 end_sec = start_sec + 2.5
             cues.append((start_sec, end_sec, clean_text))
@@ -212,6 +241,278 @@ def parse_vtt_text(content: str) -> List[Tuple[float, float, str]]:
             deduped.append(c)
 
     return deduped
+
+
+def fetch_lrclib_lyrics(song_title: str, artist_name: str = "", duration: float = 0.0) -> Tuple[List[Tuple[float, float, str]], str]:
+    """Fetch timestamped lyrics from LRCLIB as synced lyrics fallback with intelligent artist extraction and script preference."""
+    try:
+        raw_chunks = re.split(r'[\-\|\–\—\/]', song_title)
+        fluff_pattern = r'(?i)\b(official|music|video|audio|lyrics|lyrical|dance\s*songs|full\s*song|hd|4k|remix|vevo|topic|feat\.?|ft\.?|starring|records|t-series|tips\s*official|zee\s*music)\b|\(.*?\)|\[.*?\]'
+        
+        cleaned_chunks = []
+        for c in raw_chunks:
+            c_clean = re.sub(fluff_pattern, ' ', c).strip()
+            c_clean = " ".join(c_clean.split())
+            if c_clean and len(c_clean) > 1:
+                cleaned_chunks.append(c_clean)
+                
+        title_main = cleaned_chunks[0] if cleaned_chunks else re.sub(fluff_pattern, ' ', song_title).strip()
+        
+        potential_artists = [c for c in cleaned_chunks[1:] if len(c) > 2]
+        if artist_name and artist_name != "YouTube":
+            clean_art = re.sub(fluff_pattern, ' ', artist_name).strip()
+            if clean_art and clean_art not in potential_artists:
+                potential_artists.insert(0, clean_art)
+                
+        search_terms = []
+        for art in potential_artists[:3]:
+            search_terms.append(f"{title_main} {art}".strip())
+        search_terms.append(title_main)
+        
+        unique_terms = []
+        for t in search_terms:
+            if t and t not in unique_terms:
+                unique_terms.append(t)
+                
+        results = []
+        seen_ids = set()
+        for term in unique_terms:
+            try:
+                resp = requests.get("https://lrclib.net/api/search", params={"q": term}, headers=BROWSER_HEADERS, timeout=10)
+                if resp.ok and isinstance(resp.json(), list):
+                    for item in resp.json():
+                        iid = item.get("id")
+                        if iid and iid not in seen_ids:
+                            seen_ids.add(iid)
+                            results.append(item)
+            except Exception:
+                pass
+                
+        synced_results = [item for item in results if item.get("syncedLyrics") and not item.get("instrumental")]
+        if not synced_results:
+            return [], "none"
+            
+        def score_lrclib_candidate(item: Dict[str, Any]) -> Tuple[int, int, float]:
+            lyrics = item.get("syncedLyrics", "")
+            cand_artist = (item.get("artistName") or "").lower()
+            cand_track = (item.get("trackName") or "").lower()
+            
+            # Penalize non-Devanagari, non-Latin foreign scripts (e.g. Arabic/Urdu script: [\u0600-\u06FF])
+            has_arabic_urdu = bool(re.search(r'[\u0600-\u06FF]', lyrics))
+            has_indic = bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', lyrics))
+            has_latin = bool(re.search(r'[a-zA-Z]', lyrics))
+            
+            if has_arabic_urdu:
+                script_penalty = 100
+            elif has_indic and not (has_latin and len(re.findall(r'[a-zA-Z]', lyrics)) > 20):
+                script_penalty = 1
+            else:
+                script_penalty = 0
+                
+            artist_match_penalty = 0
+            if potential_artists:
+                any_match = any(
+                    any(token.lower() in cand_artist or token.lower() in cand_track for token in re.findall(r'\w+', art) if len(token) > 2)
+                    for art in potential_artists
+                )
+                artist_match_penalty = 0 if any_match else 2
+                
+            dur_diff = abs(float(item.get("duration") or duration) - float(duration or 0)) if duration > 0 else 0.0
+            return (script_penalty, artist_match_penalty, dur_diff)
+
+        best = min(synced_results, key=score_lrclib_candidate, default=synced_results[0])
+
+
+        
+        lrc_lines = []
+        for line in best["syncedLyrics"].splitlines():
+            m = re.match(r'\[(\d+):(\d+(?:\.\d+)?)\]\s*(.*)', line)
+            if m and m.group(3).strip():
+                start = int(m.group(1)) * 60 + float(m.group(2))
+                txt = m.group(3).strip()
+                if not is_lyric_metadata(txt):
+                    lrc_lines.append((start, txt))
+                    
+        cues = []
+        for i, (start, txt) in enumerate(lrc_lines):
+            end = lrc_lines[i + 1][0] if i + 1 < len(lrc_lines) else (start + 3.5)
+            cues.append((start, end, txt))
+            
+        if cues:
+            print(f"[LRCLIB] Found {len(cues)} synced lines for '{best.get('trackName')}' by '{best.get('artistName')}'")
+            return cues, "lrclib"
+    except Exception as e:
+        print(f"[LRCLIB Warning] {e}")
+        
+    return [], "none"
+
+
+
+SPOTIFY_LYRICS_API_URL = os.environ.get("SPOTIFY_LYRICS_API_URL", "http://localhost:8080").rstrip("/")
+SPOTIFY_SP_DC = os.environ.get("SPOTIFY_SP_DC", "")
+SPOTIFY_CLIENT_ID = os.environ.get("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+
+
+def fetch_spotify_lyrics(song_title: str, artist_name: str = "", duration: float = 0.0) -> Tuple[List[Tuple[float, float, str]], str]:
+    """
+    Fetch synced lyrics from Spotify via local/Docker akashrchandran/spotify-lyrics-api REST API.
+    1. Checks for direct Spotify track link or resolves the Spotify track ID for the song.
+    2. Queries http://localhost:8080/?trackid={track_id}&format=lrc.
+    3. Parses synced lyrics into (start_sec, end_sec, text) cues.
+    """
+    try:
+        # Check if direct Spotify link was provided
+        direct_match = re.search(r'spotify\.com/track/([a-zA-Z0-9]{22})', song_title)
+        if direct_match:
+            track_ids = [direct_match.group(1)]
+            search_query = song_title
+        else:
+            raw_chunks = re.split(r'[\-\|\–\—\/]', song_title)
+            fluff_pattern = r'(?i)\b(official|music|video|audio|lyrics|lyrical|dance\s*songs|full\s*song|hd|4k|remix|vevo|topic|feat\.?|ft\.?|starring|records|t-series|tips\s*official|zee\s*music)\b|\(.*?\)|\[.*?\]'
+            
+            cleaned_chunks = []
+            for c in raw_chunks:
+                c_clean = re.sub(fluff_pattern, ' ', c).strip()
+                c_clean = " ".join(c_clean.split())
+                if c_clean and len(c_clean) > 1:
+                    cleaned_chunks.append(c_clean)
+                    
+            title_main = cleaned_chunks[0] if cleaned_chunks else re.sub(fluff_pattern, ' ', song_title).strip()
+            artists_part = " ".join(cleaned_chunks[1:3]) if len(cleaned_chunks) > 1 else (artist_name if artist_name != "YouTube" else "")
+            search_query = f"{title_main} {artists_part}".strip()
+            
+            emit_progress("spotify_start", 42, f"Searching Spotify (Primary) for synced lyrics: '{search_query}'...")
+
+            # Multi-engine search for Spotify track ID
+            track_ids = []
+            
+            # Engine 0: Official Spotify Developer API (if configured in .env)
+            if SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET:
+                try:
+                    auth_resp = requests.post(
+                        "https://accounts.spotify.com/api/token",
+                        data={"grant_type": "client_credentials"},
+                        auth=(SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET),
+                        timeout=4
+                    )
+                    if auth_resp.ok:
+                        app_token = auth_resp.json().get("access_token")
+                        if app_token:
+                            search_res = requests.get(
+                                "https://api.spotify.com/v1/search",
+                                params={"q": search_query, "type": "track", "limit": 3},
+                                headers={"Authorization": f"Bearer {app_token}"},
+                                timeout=4
+                            )
+                            if search_res.ok:
+                                for itm in search_res.json().get("tracks", {}).get("items", []):
+                                    if itm.get("id") and itm["id"] not in track_ids:
+                                        track_ids.append(itm["id"])
+                except Exception:
+                    pass
+
+            
+            # Engine 1: Jina AI Reader on open.spotify.com/search (bypasses JS rendering & DDG rate limits)
+            for query_variant in [f"{title_main} {artists_part}".strip(), title_main]:
+                if not query_variant:
+                    continue
+                try:
+                    jina_url = f"https://r.jina.ai/https://open.spotify.com/search/{urllib.parse.quote(query_variant)}"
+                    jina_resp = requests.get(jina_url, headers={"User-Agent": "Mozilla/5.0"}, timeout=6)
+                    if jina_resp.ok:
+                        found_ids = re.findall(r'open\.spotify\.com/track/([a-zA-Z0-9]{22})', jina_resp.text)
+                        for tid in found_ids:
+                            if tid not in track_ids:
+                                track_ids.append(tid)
+                except Exception:
+                    pass
+                if track_ids:
+                    break
+
+            # Engine 2: DuckDuckGo HTML search fallback
+            if not track_ids:
+                search_queries = [
+                    f"site:open.spotify.com/track {search_query}",
+                    f"site:open.spotify.com/track {title_main}"
+                ]
+                for sq in search_queries:
+                    try:
+                        ddg_resp = requests.get(
+                            "https://html.duckduckgo.com/html/",
+                            params={"q": sq},
+                            headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                            timeout=5
+                        )
+                        if ddg_resp.ok:
+                            found_ids = re.findall(r'open\.spotify\.com(?:%2F|/)track(?:%2F|/)([a-zA-Z0-9]{22})', ddg_resp.text)
+                            for tid in found_ids:
+                                if tid not in track_ids:
+                                    track_ids.append(tid)
+                    except Exception:
+                        pass
+                    if track_ids:
+                        break
+
+
+        # 2. Query spotify-lyrics-api for candidate track IDs
+        for tid in track_ids[:3]:
+            try:
+                lrc_resp = requests.get(
+                    f"{SPOTIFY_LYRICS_API_URL}/",
+                    params={"trackid": tid, "format": "lrc"},
+                    timeout=5
+                )
+                if not lrc_resp.ok:
+                    continue
+                data = lrc_resp.json()
+                if data.get("error") or data.get("syncType", "").upper() == "UNSYNCED":
+                    continue
+                
+                lines_data = data.get("lines", [])
+                if not lines_data:
+                    continue
+                
+                cues = []
+                for idx, item in enumerate(lines_data):
+                    time_tag = item.get("timeTag") or item.get("startTimeMs") or "00:00.00"
+                    if isinstance(time_tag, (int, float)):
+                        s_sec = float(time_tag) / 1000.0
+                    else:
+                        m = re.match(r'(\d+):(\d+(?:\.\d+)?)', str(time_tag))
+                        s_sec = int(m.group(1)) * 60 + float(m.group(2)) if m else 0.0
+                        
+                    txt = (item.get("words") or "").strip()
+                    if txt and not is_lyric_metadata(txt):
+                        if idx + 1 < len(lines_data):
+                            next_tag = lines_data[idx + 1].get("timeTag") or lines_data[idx + 1].get("startTimeMs") or ""
+                            if isinstance(next_tag, (int, float)):
+                                e_sec = float(next_tag) / 1000.0
+                            else:
+                                mn = re.match(r'(\d+):(\d+(?:\.\d+)?)', str(next_tag))
+                                e_sec = int(mn.group(1)) * 60 + float(mn.group(2)) if mn else (s_sec + 3.0)
+                        else:
+                            e_sec = s_sec + 3.5
+                        cues.append((s_sec, max(s_sec + 1.2, e_sec), txt))
+                        
+                if cues and len(cues) > 1:
+                    timestamps = [c[0] for c in cues]
+                    if max(timestamps) - min(timestamps) < 0.5:
+                        # Unsynced lyrics with identical timestamps, skip
+                        continue
+                    emit_progress("spotify_done", 46, f"Retrieved {len(cues)} synced lines from Spotify (Track: {tid})")
+                    print(f"[Spotify-Lyrics-API] Found {len(cues)} synced lines on Spotify (Track ID: {tid})")
+                    return cues, "spotify"
+
+            except Exception:
+                continue
+
+    except Exception as err:
+        print(f"[Spotify-Lyrics-API Warning] {err}")
+
+    return [], "none"
+
+
 
 
 GENIUS_API_KEY = os.environ.get("GENIUS_API_KEY", "ypkO8jfBDy2rrh0H_LUff5Adg2XIRrHx5GA3K73ENrTGdG2V8_I4WxIWjDp8bps8")
@@ -294,8 +595,59 @@ def fetch_genius_lyrics_fallback(
     return [], "none"
 
 
+def get_python_executable() -> str:
+    """Resolve preferred virtualenv Python interpreter (.venv310 -> .venv -> sys.executable)."""
+    project_root = Path(__file__).resolve().parent
+    venv310_py = project_root / ".venv310" / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+    if venv310_py.exists():
+        return str(venv310_py)
+    venv_py = project_root / ".venv" / ("Scripts" if os.name == "nt" else "bin") / ("python.exe" if os.name == "nt" else "python")
+    if venv_py.exists():
+        return str(venv_py)
+    return sys.executable
+
+
+def transliterate_hindi_cues(cues: List[Tuple[float, float, str]]) -> Tuple[List[Tuple[float, float, str]], str]:
+    """Transliterate Devanagari/Indic script cues to Romanized Hinglish using AI4Bharat IndicXlit."""
+    if not cues or not any(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', text) for _, _, text in cues):
+        return cues, "none"
+
+    py_bin = get_python_executable()
+    runner_script = Path(__file__).resolve().parent / "indicxlit_runner.py"
+    payload = json.dumps([text for _, _, text in cues], ensure_ascii=False)
+
+    try:
+        proc = subprocess.run(
+            [py_bin, str(runner_script)],
+            input=payload,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True
+        )
+        stdout_text = proc.stdout or ""
+        result_json_str = ""
+        for line in stdout_text.splitlines():
+            if line.startswith("__INDICXLIT_RESULT__"):
+                result_json_str = line.replace("__INDICXLIT_RESULT__", "").strip()
+                break
+        if not result_json_str:
+            match = re.search(r'\[.*\]', stdout_text, re.DOTALL)
+            if match:
+                result_json_str = match.group(0)
+
+        if result_json_str:
+            converted = json.loads(result_json_str)
+            return [(s, e, converted[i] if i < len(converted) else text) for i, (s, e, text) in enumerate(cues)], "indicxlit"
+    except Exception as error:
+        emit_progress("indicxlit_warning", 50, f"IndicXlit transliteration warning: {error}")
+
+    return cues, "none"
+
+
 # Cache detected encoder
 _CACHED_ENCODER = None
+
 
 def detect_fastest_h264_encoder() -> Tuple[str, List[str]]:
     """Automatically detect if GPU hardware acceleration (NVENC, AMF, MF) is available."""
@@ -342,13 +694,21 @@ def download_youtube_audio(
         except OSError:
             pass
 
-    is_direct_url = (
-        query_or_url.startswith("http://") or 
-        query_or_url.startswith("https://") or 
-        "youtube.com" in query_or_url or 
-        "youtu.be" in query_or_url
-    )
-    search_target = query_or_url if is_direct_url else f"ytsearch1:{query_or_url}"
+    is_youtube_url = ("youtube.com" in query_or_url or "youtu.be" in query_or_url)
+    if "spotify.com/track/" in query_or_url or query_or_url.startswith("spotify:track:"):
+        sp_title = query_or_url
+        try:
+            oembed_resp = requests.get(f"https://open.spotify.com/oembed?url={query_or_url}", timeout=4)
+            if oembed_resp.ok:
+                sp_title = oembed_resp.json().get("title", query_or_url)
+        except Exception:
+            pass
+        search_target = f"ytsearch1:{sp_title}"
+    elif is_youtube_url:
+        search_target = query_or_url
+    else:
+        search_target = f"ytsearch1:{query_or_url}"
+
 
     ydl_opts = {
         "format": "ba[ext=m4a]/ba[ext=mp3]/140/bestaudio/best",
@@ -386,24 +746,58 @@ def download_youtube_audio(
     title = video_info.get("title", query_or_url)
     duration = video_info.get("duration") or 0.0
     uploader = video_info.get("uploader") or video_info.get("channel") or "YouTube"
+    artist = video_info.get("artist") or video_info.get("creator") or uploader
 
     expected_audio = f"{audio_basename}.mp3"
     if not os.path.exists(expected_audio) and os.path.exists(output_audio_path):
         expected_audio = output_audio_path
 
-    cues, matched_lang = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
+    cues, matched_lang, is_manual = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
     # Check if lyrics contain non-Latin Indic/Gurmukhi/Devanagari script
     has_indic_script = any(bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', c[2])) for c in cues) if cues else False
     is_punjabi_or_hindi_requested = target_lang in ["pa", "punjabi", "panjabi", "hi", "hindi"]
 
-    # Enforce Romanized Hinglish/Punjabi lyrics via Genius when Indic script is detected or for Punjabi/Hindi songs
-    if not cues or has_indic_script or is_punjabi_or_hindi_requested:
+    if is_manual and cues:
+        # 1. Manual / Creator-uploaded subtitles found:
+        # DO NOT fallback to Spotify or LRCLIB (even if in Devanagari script).
+        # Directly transliterate Devanagari lyrics into Hinglish with IndicXlit.
+        if has_indic_script:
+            emit_progress("indicxlit_start", 50, "Manual creator Devanagari captions found; transliterating with AI4Bharat IndicXlit...")
+            cues, xlit_src = transliterate_hindi_cues(cues)
+            if xlit_src == "indicxlit":
+                matched_lang = "indicxlit"
+    else:
+        # 2. YouTube Auto-generated subtitles or No manual subtitles found:
+        # Strict priority: 1) Spotify Lyrics API -> 2) LRCLIB -> 3) Auto-captions fallback
+        query_hint = query_or_url if ("spotify.com" in query_or_url or "spotify:" in query_or_url) else title
+        spotify_cues, spotify_lang = fetch_spotify_lyrics(query_hint, artist, duration)
+        if spotify_cues:
+            cues = spotify_cues
+            matched_lang = spotify_lang
+        else:
+            emit_progress("lrclib_fallback", 45, "Searching LRCLIB for verified synced lyrics...")
+            lrclib_cues, lrclib_lang = fetch_lrclib_lyrics(title, artist, duration)
+            if lrclib_cues:
+                cues = lrclib_cues
+                matched_lang = lrclib_lang
+
+        # Transliterate any Devanagari script in active cues (from LRCLIB or YouTube auto-captions)
+        has_indic_script = any(bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', c[2])) for c in cues) if cues else False
+        if has_indic_script:
+            emit_progress("indicxlit_start", 50, "Devanagari/Indic script detected; transliterating lyrics with AI4Bharat IndicXlit...")
+            cues, xlit_src = transliterate_hindi_cues(cues)
+            if xlit_src == "indicxlit":
+                matched_lang = "indicxlit"
+
+
+    # Enforce Romanized Hinglish/Punjabi lyrics via Genius when Indic script is still present or no captions found
+    has_remaining_indic = any(bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', c[2])) for c in cues) if cues else False
+    if not cues or has_remaining_indic or (not cues and is_punjabi_or_hindi_requested):
         emit_progress("genius_fallback", 50, f"Fetching verified Romanized Punjabi/Hinglish lyrics from Genius API...")
         genius_cues, genius_lang = fetch_genius_lyrics_fallback(title, uploader, duration)
         if genius_cues:
-            # If we had YouTube timestamps, preserve timestamps and substitute Romanized text!
-            if cues and len(cues) > 5 and len(genius_cues) > 5 and has_indic_script:
+            if cues and len(cues) > 5 and len(genius_cues) > 5 and has_remaining_indic:
                 aligned_cues = []
                 num_cues = min(len(cues), len(genius_cues))
                 for i in range(num_cues):
@@ -412,6 +806,9 @@ def download_youtube_audio(
             else:
                 cues = genius_cues
             matched_lang = "punjabi_hinglish"
+
+
+
 
     emit_progress("ytdlp_done", 55, f"Audio & lyrics ready: '{title}' ({len(cues)} lines, source: {matched_lang})", {
         "title": title,
@@ -611,8 +1008,144 @@ TEMPLATES = {
         "margin_v": 80,
         "bg_color": "0x8ACE00",
         "scale_x": 68,
+    },
+    "yt_hindi_type": {
+        "id": "yt_hindi_type",
+        "name": "YT Hindi Type (Cinematic Video)",
+        "aspect_ratio": "portrait",
+        "font_name": "EB Garamond",
+        "font_size": 56,
+        "primary_color": "&H00FFFFFF",
+        "outline_color": "&H00000000",
+        "back_color": "&H80000000",
+        "bold": 0,
+        "outline_width": 2,
+        "shadow_depth": 2,
+        "margin_v": 0,
+        "bg_color": "black",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": False,
     }
 }
+
+
+def get_top_header_text(user_header: Optional[str] = None) -> str:
+    """Read top header from user input or pick a random line from headers.txt."""
+    if user_header and user_header.strip():
+        return user_header.strip()
+    headers_file = os.path.join(os.path.dirname(__file__), "headers.txt")
+    if os.path.exists(headers_file):
+        try:
+            with open(headers_file, "r", encoding="utf-8") as f:
+                lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+                if lines:
+                    return random.choice(lines)
+        except Exception:
+            pass
+    return "When Lyrics Feel Too Personal... 🤌🤍"
+
+
+def get_random_background_video() -> Optional[str]:
+    """Select a random background video clip from videos/input/."""
+    input_dir = os.path.join(os.path.dirname(__file__), "videos", "input")
+    if os.path.exists(input_dir):
+        exts = (".mp4", ".mov", ".mkv", ".webm", ".avi")
+        videos = [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith(exts)]
+        if videos:
+            return random.choice(videos)
+    return None
+
+
+def create_header_overlay_image(
+    header_text: str,
+    canvas_width: int = 1080,
+    canvas_height: int = 1920,
+    top_margin_height: int = 420,
+    output_png_path: str = "header_overlay.png"
+) -> str:
+    """
+    Renders a centered Georgia Italic header with inline Apple-style PNG emojis.
+    Saves a transparent RGBA image matching the canvas dimensions.
+    """
+    img = Image.new("RGBA", (canvas_width, canvas_height), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+
+    scale = canvas_width / 1080.0
+    font_size = int(46 * scale)
+    font_paths = [
+        "C:/Windows/Fonts/georgiai.ttf",
+        "C:/Windows/Fonts/georgia.ttf",
+        os.path.join(os.path.dirname(__file__), "fonts", "CormorantGaramond-Italic.ttf"),
+        os.path.join(os.path.dirname(__file__), "fonts", "EBGaramond-Variable.ttf")
+    ]
+    font = None
+    for fp in font_paths:
+        if os.path.exists(fp):
+            try:
+                font = ImageFont.truetype(fp, font_size)
+                break
+            except Exception:
+                continue
+    if font is None:
+        font = ImageFont.load_default()
+
+    emoji_pattern = re.compile(
+        r'([\U00010000-\U0010ffff]|\u2764\ufe0f?|\u2665\ufe0f?|[\u2600-\u27bf])'
+    )
+    tokens = []
+    last_idx = 0
+    for m in emoji_pattern.finditer(header_text):
+        if m.start() > last_idx:
+            tokens.append(("text", header_text[last_idx:m.start()]))
+        tokens.append(("emoji", m.group()))
+        last_idx = m.end()
+    if last_idx < len(header_text):
+        tokens.append(("text", header_text[last_idx:]))
+
+    emoji_size = int(font_size * 1.1)
+    measured_tokens = []
+    total_w = 0
+    for t_type, t_val in tokens:
+        if t_type == "text":
+            bbox = draw.textbbox((0, 0), t_val, font=font)
+            w = bbox[2] - bbox[0]
+            measured_tokens.append((t_type, t_val, w))
+            total_w += w
+        else:
+            w = emoji_size + int(6 * scale)
+            measured_tokens.append((t_type, t_val, w))
+            total_w += w
+
+    start_x = max(10, (canvas_width - total_w) // 2)
+    y_pos = int((top_margin_height - font_size) // 2)
+
+    curr_x = start_x
+    for t_type, t_val, w in measured_tokens:
+        if t_type == "text":
+            draw.text((curr_x, y_pos), t_val, font=font, fill=(255, 255, 255, 240))
+            curr_x += w
+        else:
+            hex_code = "-".join(f"{ord(c):x}" for c in t_val if ord(c) != 0xfe0f).lower()
+            png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code}.png")
+            if not os.path.exists(png_path):
+                hex_code_single = f"{ord(t_val[0]):x}".lower()
+                png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code_single}.png")
+            if os.path.exists(png_path):
+                try:
+                    emoji_img = Image.open(png_path).convert("RGBA")
+                    emoji_img = emoji_img.resize((emoji_size, emoji_size), Image.Resampling.LANCZOS)
+                    e_y = y_pos + (font_size - emoji_size) // 2 + int(2 * scale)
+                    img.paste(emoji_img, (curr_x, e_y), emoji_img)
+                except Exception:
+                    pass
+            else:
+                print(f"[Emoji Info] Missing local asset for {t_val} (hex: {hex_code})")
+            curr_x += w
+
+    img.save(output_png_path, "PNG")
+    return output_png_path
+
 
 
 def build_ass_and_lrc_content(
@@ -637,9 +1170,13 @@ def build_ass_and_lrc_content(
     custom typography, dynamic reflow, and interactive dynamic placement (Center default).
     """
     tpl_id = (template_key or "").lower().strip()
+    is_yt_hindi = (tpl_id == "yt_hindi_type")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
+    elif is_yt_hindi:
+        tpl = TEMPLATES["yt_hindi_type"]
+        is_brat = False
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
         is_brat = False
@@ -650,6 +1187,8 @@ def build_ass_and_lrc_content(
     # Font handling
     if is_brat:
         effective_font = "Arial Narrow" if not font_name or font_name == "Impact" else font_name
+    elif is_yt_hindi:
+        effective_font = font_name if font_name and font_name != "Impact" else "EB Garamond"
     else:
         effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
 
@@ -692,6 +1231,16 @@ def build_ass_and_lrc_content(
         shadow_depth = int(b_theme.get("shadow_depth", 0) * scale_factor)
         if b_theme.get("font_name"):
             effective_font = b_theme["font_name"]
+    elif is_yt_hindi:
+        primary_color = "&H00FFFFFF"
+        outline_color = "&H00000000"
+        back_color = "&H80000000"
+        bold_val = 0
+        scale_x_val = 100
+        raw_spacing = int(spacing) if spacing is not None else 0
+        strikeout_val = 0
+        outline_width = int(2 * scale_factor)
+        shadow_depth = int(2 * scale_factor)
     else:
         primary_color = tpl.get("primary_color", "&H00FFFFFF")
         outline_color = tpl.get("outline_color", "&H00000000")
@@ -781,7 +1330,11 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     for i, (start_t, end_t, text) in enumerate(single_line_cues):
         adjusted_start = max(0.0, start_t + offset_seconds)
-        adjusted_end = max(adjusted_start + 0.5, end_t + offset_seconds)
+        if is_yt_hindi and (i + 1 < len(single_line_cues)):
+            next_start = max(0.0, single_line_cues[i + 1][0] + offset_seconds)
+            adjusted_end = max(adjusted_start + 0.4, next_start)
+        else:
+            adjusted_end = max(adjusted_start + 0.5, end_t + offset_seconds)
         clean_text = text.replace("{", "\\{").replace("}", "\\}").replace("\n", " ").replace("\\N", " ").strip()
 
         if is_brat:
@@ -810,6 +1363,27 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
                 brat_inline_tag = f"{{\\fs{actual_font_size}\\fsp{spacing_val}\\blur{eff_blur:.1f}}}"
                 dlg_text = f"{pos_override_tag}{brat_inline_tag}{text_string}" if pos_override_tag else f"{brat_inline_tag}{text_string}"
                 dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
+        elif is_yt_hindi:
+            # YT Hindi Type: Preserves original casing, fits on 1 line when possible, smooth fade transition
+            if len(clean_text) > 55:
+                cur_fs = int(actual_font_size * 0.72)
+                wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=48)
+            elif len(clean_text) > 40:
+                cur_fs = int(actual_font_size * 0.82)
+                wrapped_text = clean_text
+            elif len(clean_text) > 28:
+                cur_fs = int(actual_font_size * 0.92)
+                wrapped_text = clean_text
+            else:
+                cur_fs = actual_font_size
+                wrapped_text = clean_text
+
+
+            formatted_clean = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
+            fade_tag = r"{\fad(180,180)}"
+            inline_tag = f"{{\\fs{cur_fs}\\fsp{spacing_val}}}"
+            dialogue_text = f"{pos_override_tag}{fade_tag}{inline_tag}{formatted_clean}" if pos_override_tag else f"{fade_tag}{inline_tag}{formatted_clean}"
+            dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
         else:
             wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=22)
             formatted_clean = apply_word_spacing(wrapped_text, spacing_val, w_space_val)
@@ -829,6 +1403,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
     with open(output_ass_path, "w", encoding="utf-8") as f:
         f.write(ass_header + "\n".join(dialogues) + "\n")
+
 
     raw_lrc = "\n".join(raw_lrc_lines)
     emit_progress("ass_done", 70, f"Step 2: Applied {tpl['name']} ({len(dialogues)} word accumulation events, {res_x}x{res_y}, {place_mode}).")
@@ -1165,6 +1740,131 @@ def render_lyric_video_ffmpeg(
     return output_path
 
 
+def render_yt_hindi_video_ffmpeg(
+    audio_path: str,
+    ass_path: str,
+    output_path: str = "output_lyric_video.mp4",
+    duration: Optional[float] = None,
+    top_header: Optional[str] = None,
+    preview_quality: str = "final",
+    start_seconds: float = 0.0,
+    end_seconds: Optional[float] = None,
+) -> str:
+    """
+    Renders complete YT Hindi Type video with centered rectangular background video,
+    centered Georgia Italic top header with Apple emojis, and centered EB Garamond ASS lyrics.
+    Single-pass FFmpeg rendering.
+    """
+    if not duration or duration <= 0:
+        duration = get_audio_duration(audio_path)
+
+    is_fast = (preview_quality.lower() == "fast")
+    res_w = 540 if is_fast else 1080
+    res_h = 960 if is_fast else 1920
+    fps = 24 if is_fast else 30
+    rect_size = res_w  # 1080x1080 square in center (or 540x540)
+    top_margin = (res_h - rect_size) // 2  # 420 for 1080p, 210 for 540p
+
+    header_text = get_top_header_text(top_header)
+    temp_dir = os.path.dirname(output_path) or "."
+    header_png = os.path.join(temp_dir, f"header_{int(time.time()*1000)}.png")
+    create_header_overlay_image(
+        header_text=header_text,
+        canvas_width=res_w,
+        canvas_height=res_h,
+        top_margin_height=top_margin,
+        output_png_path=header_png
+    )
+
+    bg_video = get_random_background_video()
+    if bg_video:
+        print(f"[YT Hindi] Selected background video: {os.path.basename(bg_video)}")
+    else:
+        print(f"[YT Hindi] Notice: No background videos found in videos/input/. Using black background.")
+
+    fonts_dir = "fonts"
+    normalized_ass = ass_path.replace("\\", "/")
+    if ":" in normalized_ass:
+        normalized_ass = normalized_ass.replace(":", "\\:")
+
+
+    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    if is_fast:
+        encoder_name = "libx264"
+        encoder_flags = ["-preset", "ultrafast", "-crf", "26"]
+
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
+
+    normalized_header_png = header_png.replace("\\", "/")
+    if ":" in normalized_header_png:
+        normalized_header_png = normalized_header_png.replace(":", "\\:")
+
+    if bg_video and os.path.exists(bg_video):
+        filter_complex = (
+            f"[0:v]scale={rect_size}:{rect_size}:force_original_aspect_ratio=increase,"
+            f"crop={rect_size}:{rect_size},"
+            f"pad={res_w}:{res_h}:0:{top_margin}:color=black[bg];"
+            f"[bg][1:v]overlay=0:0[with_hdr];"
+            f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
+        )
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-threads", "0",
+            "-stream_loop", "-1", "-i", bg_video,
+            "-i", header_png,
+            "-i", audio_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v_out]", "-map", "2:a",
+            "-t", f"{duration:.2f}",
+            "-r", str(fps),
+            "-c:v", encoder_name,
+        ] + encoder_flags + [
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            output_path
+        ]
+    else:
+        filter_complex = (
+            f"[0:v][1:v]overlay=0:0[with_hdr];"
+            f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
+        )
+        ffmpeg_cmd = [
+            "ffmpeg", "-y",
+            "-threads", "0",
+            "-f", "lavfi", "-i", f"color=c=black:s={res_w}x{res_h}:r={fps}:d={duration:.2f}",
+            "-i", header_png,
+            "-i", audio_path,
+            "-filter_complex", filter_complex,
+            "-map", "[v_out]", "-map", "2:a",
+            "-t", f"{duration:.2f}",
+            "-r", str(fps),
+            "-c:v", encoder_name,
+        ] + encoder_flags + [
+            "-pix_fmt", "yuv420p",
+            "-c:a", "aac",
+            "-b:a", "192k",
+            "-movflags", "+faststart",
+            output_path
+        ]
+
+    emit_progress("ffmpeg_rendering", 85, f"Hardware encoding {res_w}x{res_h} video with {encoder_name}...")
+    subprocess.run(ffmpeg_cmd, check=True)
+
+    try:
+        if os.path.exists(header_png):
+            os.remove(header_png)
+    except Exception:
+        pass
+
+    if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
+        raise RuntimeError(f"Rendered video {output_path} is missing or empty.")
+
+    emit_progress("ffmpeg_done", 95, f"Video successfully rendered to '{output_path}'.")
+    return output_path
+
+
 def generate_lyric_video(
     song_query: str,
     output_path: str = "output_lyric_video.mp4",
@@ -1183,17 +1883,26 @@ def generate_lyric_video(
     blur_amount: Optional[float] = None,
     spacing: Optional[int] = None,
     word_spacing: Optional[int] = None,
+    start_seconds: float = 0.0,
+    end_seconds: Optional[float] = None,
     clean_base: bool = False,
     audio_file: Optional[str] = None,
-    cues_file: Optional[str] = None
+    cues_file: Optional[str] = None,
+    top_header: Optional[str] = None,
+    preview_quality: str = "final"
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat), Fonts, Languages, and Interactive Placement."""
+    """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type), Fonts, Languages, and Interactive Placement."""
     tpl_id = (template or "").lower().strip()
+    is_yt_hindi = (tpl_id == "yt_hindi_type")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
         b_theme = BRAT_THEMES.get((brat_theme or "green").lower(), BRAT_THEMES["green"])
         bg_color = b_theme["bg_color"]
+    elif is_yt_hindi:
+        tpl = TEMPLATES["yt_hindi_type"]
+        is_brat = False
+        bg_color = "black"
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
         is_brat = False
@@ -1238,6 +1947,47 @@ def generate_lyric_video(
         audio_path = yt_data["audio_path"]
         duration = yt_data["duration"] or get_audio_duration(audio_path)
 
+    # If no usable lyrics found across all providers, stop before FFmpeg rendering
+    if not yt_data.get("cues"):
+        msg = "No usable lyrics found. Video generation stopped before FFmpeg rendering."
+        emit_progress("no_lyrics_error", 100, msg)
+        print(f"[Error] {msg}", file=sys.stderr)
+        final_result = {
+            "status": "error",
+            "error": msg,
+            "message": msg,
+            "totalLines": 0,
+            "syncedLines": []
+        }
+        return final_result
+
+    # Restrict render to requested start_seconds and end_seconds window
+    requested_start = max(0.0, float(start_seconds or 0.0))
+    requested_end = float(end_seconds) if end_seconds is not None else None
+    test_start = requested_start
+    test_end = min(duration, requested_end if requested_end is not None else duration)
+    if test_start > 0.0 or (requested_end is not None and test_end < duration):
+        if test_end <= test_start:
+            test_end = duration
+        trim_dur = max(0.5, test_end - test_start)
+        trimmed_audio = temp_audio_path.replace(".mp3", f"_trimmed_{int(test_start)}_{int(test_end)}.mp3")
+        subprocess.run([
+            "ffmpeg", "-y", "-ss", f"{test_start:.3f}", "-t", f"{trim_dur:.3f}",
+            "-i", audio_path, "-c:a", "libmp3lame", "-b:a", "192k", trimmed_audio
+        ], capture_output=True)
+        if os.path.exists(trimmed_audio):
+            audio_path = trimmed_audio
+        
+        # Shift and filter cues
+        original_cues = yt_data["cues"]
+        yt_data["cues"] = [
+            (max(0.0, s - test_start), min(trim_dur, e - test_start), text)
+            for s, e, text in original_cues
+            if e > test_start and s < test_end
+        ]
+        duration = trim_dur
+        emit_progress("test_range", 55, f"Rendering test window: {test_start:.1f}s to {test_end:.1f}s ({duration:.1f}s total)...")
+
     ass_path, structured_lines, raw_lrc = build_ass_and_lrc_content(
         cues=yt_data["cues"],
         output_ass_path=temp_ass_path,
@@ -1256,7 +2006,18 @@ def generate_lyric_video(
         word_spacing=word_spacing
     )
 
-    if clean_base:
+    if is_yt_hindi:
+        render_yt_hindi_video_ffmpeg(
+            audio_path=audio_path,
+            ass_path=ass_path,
+            output_path=output_path,
+            duration=duration,
+            top_header=top_header,
+            preview_quality=preview_quality,
+            start_seconds=test_start,
+            end_seconds=test_end
+        )
+    elif clean_base:
         render_lyric_video_ffmpeg(
             audio_path=audio_path,
             ass_path=ass_path,
@@ -1350,9 +2111,13 @@ if __name__ == "__main__":
     spacing = None
     word_spacing = None
     brat_theme = "green"
+    start_seconds = 0.0
+    end_seconds = None
     clean_base = False
     audio_file = None
     cues_file = None
+    top_header = None
+    preview_quality = "final"
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -1402,12 +2167,26 @@ if __name__ == "__main__":
                 pass
         elif a.startswith("--brat-theme="):
             brat_theme = a.split("=")[1].strip()
+        elif a.startswith("--start-seconds="):
+            try:
+                start_seconds = float(a.split("=")[1])
+            except ValueError:
+                pass
+        elif a.startswith("--end-seconds="):
+            try:
+                end_seconds = float(a.split("=")[1])
+            except ValueError:
+                pass
         elif a == "--clean-base" or a.startswith("--clean-base"):
             clean_base = True
         elif a.startswith("--audio-file="):
             audio_file = a.split("=")[1].strip()
         elif a.startswith("--cues-file="):
             cues_file = a.split("=")[1].strip()
+        elif a.startswith("--top-header="):
+            top_header = a.split("=")[1].strip()
+        elif a.startswith("--preview-quality="):
+            preview_quality = a.split("=")[1].strip()
 
     res = generate_lyric_video(
         song_query=query,
@@ -1425,9 +2204,15 @@ if __name__ == "__main__":
         blur_amount=blur,
         spacing=spacing,
         word_spacing=word_spacing,
+        start_seconds=start_seconds,
+        end_seconds=end_seconds,
         clean_base=clean_base,
         audio_file=audio_file,
-        cues_file=cues_file
+        cues_file=cues_file,
+        top_header=top_header,
+        preview_quality=preview_quality
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)
+
+

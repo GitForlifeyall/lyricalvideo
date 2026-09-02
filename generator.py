@@ -1883,28 +1883,36 @@ def render_yt_hindi_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    # Build timeline segments synced exactly to each lyric line: [(seg_start, seg_dur, lyric_text)]
-    timeline_segments: List[Tuple[float, float, str]] = []
+    # Build timeline segments synced exactly to each lyric line: [(seg_start, seg_dur, lyric_text, fade_out_st)]
+    timeline_segments: List[Tuple[float, float, str, float]] = []
     if cues and len(cues) > 0:
         # Check intro gap before first lyric
         first_start = cues[0]["timeSeconds"] if isinstance(cues[0], dict) else cues[0][0]
         if first_start > 0.35:
-            timeline_segments.append((0.0, first_start, ""))
+            timeline_segments.append((0.0, first_start, "", max(0.0, first_start - 0.42)))
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
+            e_t = item["endSeconds"] if isinstance(item, dict) else item[1]
             txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
             if idx + 1 < len(cues):
                 next_start = cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]
                 seg_end = next_start
             else:
                 seg_end = duration
-            seg_dur = max(0.4, seg_end - s_t)
-            timeline_segments.append((s_t, seg_dur, txt))
+
+            seg_dur = max(0.6, seg_end - s_t)
+            line_sing_dur = max(0.2, e_t - s_t)
+
+            # Transition starts AFTER the line ends
+            fade_out_st = max(line_sing_dur, seg_dur - 0.42)
+            fade_out_st = min(fade_out_st, max(0.0, seg_dur - 0.42))
+
+            timeline_segments.append((s_t, seg_dur, txt, fade_out_st))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
-        timeline_segments = [(i * seg_dur, seg_dur, "") for i in range(num_seg)]
+        timeline_segments = [(i * seg_dur, seg_dur, "", max(0.0, seg_dur - 0.42)) for i in range(num_seg)]
 
     all_bg_videos = get_all_background_videos()
     lyric_png_paths = []
@@ -1921,7 +1929,7 @@ def render_yt_hindi_video_ffmpeg(
         print(f"[YT Hindi] Merging {num_segments} per-lyric video clips + lyric text overlays with synchronized fading")
 
         # Generate lyric text PNG overlay for each segment (strictly scaled to never exceed 82% video width)
-        for i, (seg_start, seg_dur, seg_text) in enumerate(timeline_segments):
+        for i, (seg_start, seg_dur, seg_text, fade_out_st) in enumerate(timeline_segments):
             png_path = os.path.join(temp_dir, f"lyric_seg_{int(time.time()*1000)}_{i}.png")
             create_lyric_line_overlay_image(
                 text=seg_text,
@@ -1942,10 +1950,11 @@ def render_yt_hindi_video_ffmpeg(
             png_inputs.extend(["-i", p])
 
         filter_parts = []
-        for i, (seg_start, seg_dur, seg_text) in enumerate(timeline_segments):
+        for i, (seg_start, seg_dur, seg_text, fade_out_st) in enumerate(timeline_segments):
             v_idx = i
             png_idx = num_segments + i
-            fade_dur = min(0.48, max(0.32, seg_dur * 0.22)) if seg_dur >= 1.5 else min(0.30, seg_dur / 3.0)
+            fade_in_d = min(0.42, seg_dur / 2.0)
+            fade_out_d = min(0.42, max(0.1, seg_dur - fade_out_st))
             # Scale video clip
             filter_parts.append(
                 f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
@@ -1958,9 +1967,10 @@ def render_yt_hindi_video_ffmpeg(
             )
             # Apply fade in & fade out to the MERGED (video + text) segment
             filter_parts.append(
-                f"[merged{i}]fade=t=in:st=0:d={fade_dur:.2f},"
-                f"fade=t=out:st={max(0, seg_dur - fade_dur):.3f}:d={fade_dur:.2f}[v{i}];"
+                f"[merged{i}]fade=t=in:st=0:d={fade_in_d:.2f},"
+                f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.2f}[v{i}];"
             )
+
 
 
         # Concatenate all merged segments

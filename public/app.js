@@ -20,12 +20,13 @@ const state = {
   xpos: 50,
   bratTheme: 'green',
   bratCasing: 'lower',
-  topHeader: '(When Lyrics feel Too Personal...)',
+  topHeader: '',
   testStart: 0,
   testEnd: '',
   previewQuality: 'final',
   lastQuery: 'The Weeknd - Blinding Lights'
 };
+
 
 // DOM Elements
 const generatorForm = document.getElementById('generator-form');
@@ -436,6 +437,31 @@ function setupEventListeners() {
       applyRealtimePlacementAndSize(true);
     });
   }
+
+  // YT Hindi Top Header Input
+  if (ytHindiTopHeaderInput) {
+    ytHindiTopHeaderInput.addEventListener('input', (e) => {
+      state.topHeader = e.target.value.trim();
+    });
+  }
+
+  // Test Range & Preview Quality Inputs
+  if (testStartInput) {
+    testStartInput.addEventListener('input', (e) => {
+      state.testStart = e.target.value.trim();
+    });
+  }
+  if (testEndInput) {
+    testEndInput.addEventListener('input', (e) => {
+      state.testEnd = e.target.value.trim();
+    });
+  }
+  if (previewQualityInput) {
+    previewQualityInput.addEventListener('change', (e) => {
+      state.previewQuality = e.target.value;
+    });
+  }
+
 
   // Live Video Overlay Layer Toggle Button
   if (stageOverlayToggleBtn) {

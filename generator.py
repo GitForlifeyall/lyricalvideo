@@ -1103,17 +1103,21 @@ def create_header_overlay_image(
         font = ImageFont.load_default()
 
     emoji_pattern = re.compile(
-        r'([\U00010000-\U0010ffff]|\u2764\ufe0f?|\u2665\ufe0f?|[\u2600-\u27bf])'
+        r'([\U00010000-\U0010ffff][\ufe00-\ufe0f]?|[\u2600-\u27bf][\ufe00-\ufe0f]?|\u2764[\ufe00-\ufe0f]?)'
     )
     tokens = []
     last_idx = 0
     for m in emoji_pattern.finditer(header_text):
         if m.start() > last_idx:
-            tokens.append(("text", header_text[last_idx:m.start()]))
+            txt_part = re.sub(r'[\ufe00-\ufe0f]', '', header_text[last_idx:m.start()])
+            if txt_part:
+                tokens.append(("text", txt_part))
         tokens.append(("emoji", m.group()))
         last_idx = m.end()
     if last_idx < len(header_text):
-        tokens.append(("text", header_text[last_idx:]))
+        txt_part = re.sub(r'[\ufe00-\ufe0f]', '', header_text[last_idx:])
+        if txt_part:
+            tokens.append(("text", txt_part))
 
     emoji_size = int(font_size * 1.1)
     measured_tokens = []
@@ -1158,6 +1162,73 @@ def create_header_overlay_image(
 
     img.save(output_png_path, "PNG")
     return output_png_path
+
+
+def create_lyric_line_overlay_image(
+    text: str,
+    rect_w: int = 1080,
+    rect_h: int = 720,
+    font_name: str = "EB Garamond",
+    base_font_size: int = 44,
+    output_png_path: str = "line_overlay.png"
+) -> str:
+    """
+    Renders a single lyric line centered horizontally and vertically
+    on a transparent RGBA image of size (rect_w, rect_h).
+    Guarantees that the text NEVER exceeds 82% of the video rectangle width (880px on 1080p).
+    """
+    img = Image.new("RGBA", (rect_w, rect_h), (0, 0, 0, 0))
+    if not text or not text.strip():
+        img.save(output_png_path, "PNG")
+        return output_png_path
+
+    clean_text = text.strip()
+    # Preserves natural casing or formats all-caps to sentence case
+    letters = [c for c in clean_text if c.isalpha()]
+    if letters and all(c.isupper() for c in letters) and len(letters) > 3:
+        clean_text = clean_text.capitalize()
+
+    draw = ImageDraw.Draw(img)
+    scale = rect_w / 1080.0
+    target_font_size = int(base_font_size * scale)
+
+    font_paths = [
+        os.path.join(os.path.dirname(__file__), "fonts", "EBGaramond-Variable.ttf"),
+        os.path.join(os.path.dirname(__file__), "fonts", "CormorantGaramond-Regular.ttf"),
+        "C:/Windows/Fonts/georgia.ttf"
+    ]
+
+    def get_font(size: int):
+        for fp in font_paths:
+            if os.path.exists(fp):
+                try:
+                    return ImageFont.truetype(fp, size)
+                except Exception:
+                    continue
+        return ImageFont.load_default()
+
+    font = get_font(target_font_size)
+    max_allowed_w = int(rect_w * 0.82)  # Strict 82% inner safe area (885px on 1080p)
+
+    # Auto-scale font size down until text width <= max_allowed_w
+    bbox = draw.textbbox((0, 0), clean_text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+
+    while text_w > max_allowed_w and target_font_size > int(18 * scale):
+        target_font_size = max(int(18 * scale), int(target_font_size * (max_allowed_w / max(1, text_w)) * 0.98))
+        font = get_font(target_font_size)
+        bbox = draw.textbbox((0, 0), clean_text, font=font)
+        text_w = bbox[2] - bbox[0]
+        text_h = bbox[3] - bbox[1]
+
+    x_pos = (rect_w - text_w) // 2
+    y_pos = (rect_h - text_h) // 2
+
+    draw.text((x_pos, y_pos), clean_text, font=font, fill=(255, 255, 255, 255))
+    img.save(output_png_path, "PNG")
+    return output_png_path
+
 
 
 
@@ -1776,9 +1847,12 @@ def render_yt_hindi_video_ffmpeg(
     cues: Optional[List[Any]] = None,
 ) -> str:
     """
-    Renders complete YT Hindi Type video with centered rectangular background video,
-    centered Georgia Italic top header with Apple emojis, and centered EB Garamond ASS lyrics.
-    Single-pass FFmpeg rendering with per-lyric video transitions and synchronized fading.
+    Renders complete YT Hindi Type video where:
+    1. Every lyric line has a distinct synced background video transition.
+    2. The lyric text is merged directly onto the video clip segment first.
+    3. Fade-in and fade-out are applied to the MERGED (video + text) segment simultaneously.
+    4. All merged segments are concatenated into a seamless video stream.
+    5. Top header is overlaid in the upper black margin.
     """
     if not duration or duration <= 0:
         duration = get_audio_duration(audio_path)
@@ -1801,11 +1875,6 @@ def render_yt_hindi_video_ffmpeg(
         top_margin_height=top_margin,
         output_png_path=header_png
     )
-    fonts_dir = "fonts"
-
-    normalized_ass = ass_path.replace("\\", "/")
-    if ":" in normalized_ass:
-        normalized_ass = normalized_ass.replace(":", "\\:")
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -1814,36 +1883,38 @@ def render_yt_hindi_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    # Build timeline segments synced exactly to each lyric line
-    timeline_segments: List[Tuple[float, float]] = []
+    # Build timeline segments synced exactly to each lyric line: [(seg_start, seg_dur, lyric_text)]
+    timeline_segments: List[Tuple[float, float, str]] = []
     if cues and len(cues) > 0:
         # Check intro gap before first lyric
         first_start = cues[0]["timeSeconds"] if isinstance(cues[0], dict) else cues[0][0]
         if first_start > 0.35:
-            timeline_segments.append((0.0, first_start))
+            timeline_segments.append((0.0, first_start, ""))
 
         for idx, item in enumerate(cues):
             s_t = item["timeSeconds"] if isinstance(item, dict) else item[0]
             e_t = item["endSeconds"] if isinstance(item, dict) else item[1]
+            txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
             if idx + 1 < len(cues):
                 next_start = cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]
                 seg_end = next_start
             else:
                 seg_end = min(duration, e_t)
             seg_dur = max(0.4, seg_end - s_t)
-            timeline_segments.append((s_t, seg_dur))
+            timeline_segments.append((s_t, seg_dur, txt))
 
         # Check outro gap after last lyric
         last_item = cues[-1]
         last_end = last_item["endSeconds"] if isinstance(last_item, dict) else last_item[1]
         if last_end < duration - 0.4:
-            timeline_segments.append((last_end, duration - last_end))
+            timeline_segments.append((last_end, duration - last_end, ""))
     else:
         num_seg = max(1, math.ceil(duration / 5.0))
         seg_dur = duration / num_seg
-        timeline_segments = [(i * seg_dur, seg_dur) for i in range(num_seg)]
+        timeline_segments = [(i * seg_dur, seg_dur, "") for i in range(num_seg)]
 
     all_bg_videos = get_all_background_videos()
+    lyric_png_paths = []
     if all_bg_videos and timeline_segments:
         num_segments = len(timeline_segments)
         selected_clips = []
@@ -1854,36 +1925,66 @@ def render_yt_hindi_video_ffmpeg(
             selected_clips.append(chosen)
             last_clip = chosen
 
-        print(f"[YT Hindi] Syncing {num_segments} background video clips to every lyric change")
+        print(f"[YT Hindi] Merging {num_segments} per-lyric video clips + lyric text overlays with synchronized fading")
+
+        # Generate lyric text PNG overlay for each segment (strictly scaled to never exceed 82% video width)
+        for i, (seg_start, seg_dur, seg_text) in enumerate(timeline_segments):
+            png_path = os.path.join(temp_dir, f"lyric_seg_{int(time.time()*1000)}_{i}.png")
+            create_lyric_line_overlay_image(
+                text=seg_text,
+                rect_w=rect_w,
+                rect_h=rect_h,
+                font_name="EB Garamond",
+                base_font_size=42,
+                output_png_path=png_path
+            )
+            lyric_png_paths.append(png_path)
+
+        video_inputs = []
+        for clip_path in selected_clips:
+            video_inputs.extend(["-stream_loop", "-1", "-i", clip_path])
+
+        png_inputs = []
+        for p in lyric_png_paths:
+            png_inputs.extend(["-i", p])
 
         filter_parts = []
-        video_inputs = []
-        for i, ((seg_start, seg_dur), clip_path) in enumerate(zip(timeline_segments, selected_clips)):
-            video_inputs.extend(["-stream_loop", "-1", "-i", clip_path])
-            fade_dur = min(0.22, seg_dur / 3.0)
+        for i, (seg_start, seg_dur, seg_text) in enumerate(timeline_segments):
+            v_idx = i
+            png_idx = num_segments + i
+            fade_dur = min(0.24, seg_dur / 3.0)
+            # Scale video clip
             filter_parts.append(
-                f"[{i}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
+                f"[{v_idx}:v]trim=0:{seg_dur:.3f},setpts=PTS-STARTPTS,"
                 f"scale={rect_w}:{rect_h}:force_original_aspect_ratio=increase,"
-                f"crop={rect_w}:{rect_h},setsar=1,fps={fps},"
-                f"fade=t=in:st=0:d={fade_dur:.2f},"
+                f"crop={rect_w}:{rect_h},setsar=1,fps={fps}[bg{i}];"
+            )
+            # Merge lyric text directly onto the video clip first
+            filter_parts.append(
+                f"[bg{i}][{png_idx}:v]overlay=0:0[merged{i}];"
+            )
+            # Apply fade in & fade out to the MERGED (video + text) segment
+            filter_parts.append(
+                f"[merged{i}]fade=t=in:st=0:d={fade_dur:.2f},"
                 f"fade=t=out:st={max(0, seg_dur - fade_dur):.3f}:d={fade_dur:.2f}[v{i}];"
             )
 
+        # Concatenate all merged segments
         concat_inputs = "".join(f"[v{i}]" for i in range(num_segments))
         filter_parts.append(f"{concat_inputs}concat=n={num_segments}:v=1:a=0[bg_rect];")
-        filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[bg];")
+        filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[canvas];")
 
-        hdr_idx = num_segments
-        audio_idx = num_segments + 1
+        hdr_idx = 2 * num_segments
+        audio_idx = 2 * num_segments + 1
 
-        filter_parts.append(f"[bg][{hdr_idx}:v]overlay=0:0[with_hdr];")
-        filter_parts.append(f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]")
+        filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
 
         filter_complex = "".join(filter_parts)
 
         ffmpeg_cmd = (
             ["ffmpeg", "-y", "-threads", "0"] +
             video_inputs +
+            png_inputs +
             ["-i", header_png, "-i", audio_path] +
             ["-filter_complex", filter_complex] +
             ["-map", "[v_out]", "-map", f"{audio_idx}:a"] +
@@ -1895,8 +1996,7 @@ def render_yt_hindi_video_ffmpeg(
     else:
         print(f"[YT Hindi] Notice: No background videos found in videos/input/. Using black background.")
         filter_complex = (
-            f"[0:v][1:v]overlay=0:0[with_hdr];"
-            f"[with_hdr]ass={normalized_ass}:fontsdir={fonts_dir}[v_out]"
+            f"[0:v][1:v]overlay=0:0[v_out]"
         )
         ffmpeg_cmd = [
             "ffmpeg", "-y",
@@ -1919,13 +2019,21 @@ def render_yt_hindi_video_ffmpeg(
 
 
     emit_progress("ffmpeg_rendering", 85, f"Hardware encoding {res_w}x{res_h} video with {encoder_name}...")
-    subprocess.run(ffmpeg_cmd, check=True)
-
     try:
-        if os.path.exists(header_png):
-            os.remove(header_png)
-    except Exception:
-        pass
+        subprocess.run(ffmpeg_cmd, check=True)
+    finally:
+        for p in lyric_png_paths:
+            try:
+                if os.path.exists(p):
+                    os.remove(p)
+            except Exception:
+                pass
+        try:
+            if os.path.exists(header_png):
+                os.remove(header_png)
+        except Exception:
+            pass
+
 
     if not os.path.exists(output_path) or os.path.getsize(output_path) < 1000:
         raise RuntimeError(f"Rendered video {output_path} is missing or empty.")

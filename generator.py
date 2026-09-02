@@ -22,7 +22,6 @@ import time
 import requests
 import yt_dlp
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-from film_burn_intro import generate_film_burn_filters
 
 YT_HINDI_TRANSITION_SECONDS = 0.42
 
@@ -1375,6 +1374,19 @@ def get_random_background_video() -> Optional[str]:
     return random.choice(videos) if videos else None
 
 
+def get_all_film_overlays() -> List[str]:
+    """Retrieve all authentic film overlay video clips from 'FILM OVERLAY/' directory."""
+    folder = os.path.join(os.path.dirname(__file__), "FILM OVERLAY")
+    if os.path.exists(folder):
+        exts = (".mp4", ".mov", ".mkv", ".webm")
+        return [
+            os.path.join(folder, f)
+            for f in os.listdir(folder)
+            if f.lower().endswith(exts) and not f.startswith(".")
+        ]
+    return []
+
+
 def create_header_overlay_image(
     header_text: str,
     canvas_width: int = 1080,
@@ -2305,9 +2317,10 @@ def render_yt_hindi_video_ffmpeg(
         )
 
     intro_png = None
+    chosen_overlay_video = None
     burn_dur = 3.0
     if film_burn_intro:
-        # Intro variation: NO top header, ONLY the intro text during the intro window
+        # Intro variation: NO top header. Uses whole video from FILM OVERLAY/ + centered intro text.
         first_lyric_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 3.0)
         burn_dur = min(4.0, first_lyric_start) if first_lyric_start >= 2.0 else 3.0
         intro_text = get_intro_header_text(intro_header, song_title=song_title, duration=duration or 0.0)
@@ -2318,6 +2331,10 @@ def render_yt_hindi_video_ffmpeg(
             canvas_height=res_h,
             output_png_path=intro_png
         )
+        overlay_pool = get_all_film_overlays()
+        if overlay_pool:
+            chosen_overlay_video = random.choice(overlay_pool)
+            print(f"[YT Hindi Intro] Selected film overlay video: {os.path.basename(chosen_overlay_video)}")
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -2479,13 +2496,30 @@ def render_yt_hindi_video_ffmpeg(
         filter_parts.append(f"[bg_rect]pad={res_w}:{res_h}:0:{top_margin}:color=black[canvas];")
 
         if film_burn_intro and intro_png:
-            intro_idx = len(selected_clips) + len(lyric_png_paths)
-            audio_idx = intro_idx + 1
+            extra_inputs = []
+            if chosen_overlay_video:
+                ov_in_idx = len(selected_clips) + len(lyric_png_paths)
+                intro_idx = ov_in_idx + 1
+                audio_idx = ov_in_idx + 2
+                extra_inputs.extend(["-stream_loop", "-1", "-i", chosen_overlay_video, "-i", intro_png])
 
-            # Apply procedural film burn to canvas (no red or white lines)
-            burn_filter_str, _ = generate_film_burn_filters(intro_duration=burn_dur)
-            print(f"[YT Hindi Intro] Applied procedural film burn intro ({burn_dur:.2f}s) with intro text (NO headers.txt)")
-            filter_parts.append(f"[canvas]{burn_filter_str}[burned];")
+                fade_out_burn = max(0.1, burn_dur - 0.42)
+                # Scale film overlay to canvas, trim to burn_dur, fade out at end of intro
+                filter_parts.append(
+                    f"[{ov_in_idx}:v]trim=0:{burn_dur:.3f},setpts=PTS-STARTPTS,"
+                    f"scale={res_w}:{res_h}:force_original_aspect_ratio=increase,"
+                    f"crop={res_w}:{res_h},setsar=1,fps={fps},"
+                    f"fade=t=out:st={fade_out_burn:.3f}:d=0.420[intro_film];"
+                )
+                filter_parts.append(
+                    f"[canvas][intro_film]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[with_film];"
+                )
+                base_layer = "[with_film]"
+            else:
+                intro_idx = len(selected_clips) + len(lyric_png_paths)
+                audio_idx = intro_idx + 1
+                extra_inputs.extend(["-i", intro_png])
+                base_layer = "[canvas]"
 
             # Intro text with smooth fade in and fade out (loop static image continuously)
             fade_in_d = min(0.5, burn_dur / 3.0)
@@ -2495,12 +2529,12 @@ def render_yt_hindi_video_ffmpeg(
                 f"[{intro_idx}:v]format=rgba,loop=-1:1:0,fade=t=in:st=0.25:d={fade_in_d:.3f}:alpha=1,"
                 f"fade=t=out:st={fade_out_st:.3f}:d={fade_out_d:.3f}:alpha=1[intro_txt];"
             )
-            # Overlay intro text on burned canvas strictly during intro window. No top header is added.
+            # Overlay intro text strictly during intro window. No top header is added.
             filter_parts.append(
-                f"[burned][intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[v_out]"
+                f"{base_layer}[intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[v_out]"
             )
 
-            extra_image_inputs = ["-i", intro_png]
+            extra_image_inputs = extra_inputs
         else:
             hdr_idx = 2 * num_segments
             audio_idx = 2 * num_segments + 1

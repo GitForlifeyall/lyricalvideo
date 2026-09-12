@@ -13,6 +13,9 @@ import random
 import math
 import textwrap
 import tempfile
+import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor
 
 import subprocess
 import shutil
@@ -177,13 +180,18 @@ def get_peak_memory_mb() -> Optional[float]:
 
             counters = PROCESS_MEMORY_COUNTERS()
             counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
-            get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
-            get_process_memory_info(
-                ctypes.windll.kernel32.GetCurrentProcess(),
-                ctypes.byref(counters),
-                counters.cb,
-            )
-            return round(counters.PeakWorkingSetSize / (1024 * 1024), 2)
+            h_process = ctypes.windll.kernel32.GetCurrentProcess()
+            psapi = ctypes.WinDLL("psapi")
+            psapi.GetProcessMemoryInfo.argtypes = [
+                ctypes.wintypes.HANDLE,
+                ctypes.POINTER(PROCESS_MEMORY_COUNTERS),
+                ctypes.wintypes.DWORD,
+            ]
+            psapi.GetProcessMemoryInfo.restype = ctypes.wintypes.BOOL
+            success = psapi.GetProcessMemoryInfo(h_process, ctypes.byref(counters), counters.cb)
+            if success and counters.PeakWorkingSetSize > 0:
+                return round(counters.PeakWorkingSetSize / (1024 * 1024), 2)
+            return None
 
         import resource
         peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
@@ -1051,6 +1059,14 @@ def detect_fastest_h264_encoder() -> Tuple[str, List[str]]:
     return _CACHED_ENCODER
 
 
+def get_encoder_for_quality(preview_quality: str = "final") -> Tuple[str, List[str]]:
+    """Select encoder flags for final output or a quick preview render."""
+    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    if (preview_quality or "").lower() in ("fast", "draft", "preview") and encoder_name == "libx264":
+        return encoder_name, ["-preset", "ultrafast", "-crf", "28"]
+    return encoder_name, encoder_flags
+
+
 def download_youtube_audio(
     query_or_url: str,
     output_audio_path: str = "temp_audio.mp3",
@@ -1127,27 +1143,15 @@ def download_youtube_audio(
 
 
     ydl_opts = {
-        "format": "ba[ext=m4a]/ba[ext=mp3]/140/bestaudio/best",
+        "format": "ba[ext=m4a]/ba/b",
         "outtmpl": f"{audio_basename}.%(ext)s",
-        "postprocessors": [
-            {
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": "192",
-            }
-        ],
         "noplaylist": True,
         "quiet": True,
         "no_warnings": True,
         "writesubtitles": False,
         "writeautomaticsub": False,
-        "concurrent_fragment_downloads": 8,
+        "concurrent_fragment_downloads": 4,
         "buffersize": 1024 * 64,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["mweb", "android", "web", "ios"]
-            }
-        },
         "http_headers": BROWSER_HEADERS,
         "retries": 3,
         "fragment_retries": 3,
@@ -1339,9 +1343,21 @@ def download_youtube_audio(
     uploader = video_info.get("uploader") or video_info.get("channel") or "YouTube"
     artist = video_info.get("artist") or video_info.get("creator") or uploader
 
-    expected_audio = f"{audio_basename}.mp3"
-    if not os.path.exists(expected_audio) and os.path.exists(output_audio_path):
-        expected_audio = output_audio_path
+    expected_audio = None
+    for candidate_ext in ("m4a", "webm", "opus", "mp3", "aac", "ogg"):
+        cand_path = f"{audio_basename}.{candidate_ext}"
+        if os.path.exists(cand_path):
+            expected_audio = cand_path
+            break
+    if not expected_audio:
+        matched = list(Path(audio_basename).parent.glob(f"{Path(audio_basename).name}.*"))
+        non_part = [str(p) for p in matched if not p.name.endswith(".part") and not p.name.endswith(".ytdl")]
+        if non_part:
+            expected_audio = non_part[0]
+        elif os.path.exists(output_audio_path):
+            expected_audio = output_audio_path
+        else:
+            expected_audio = f"{audio_basename}.m4a"
 
     cues, matched_lang, is_manual = fetch_direct_youtube_subtitles(video_info, target_lang=target_lang)
 
@@ -1732,6 +1748,282 @@ def get_all_background_videos() -> List[str]:
         exts = (".mp4", ".mov", ".mkv", ".webm", ".avi")
         return [os.path.join(input_dir, f) for f in os.listdir(input_dir) if f.lower().endswith(exts)]
     return []
+
+
+ASSETS_MANIFEST_PATH = os.path.join(os.path.dirname(__file__), "videos", "assets_manifest.json")
+_manifest_lock = threading.Lock()
+_assets_manifest: Optional[Dict[str, Dict[str, Any]]] = None
+
+
+def _load_assets_manifest() -> Dict[str, Dict[str, Any]]:
+    global _assets_manifest
+    with _manifest_lock:
+        if _assets_manifest is not None:
+            return _assets_manifest
+        manifest = {}
+        if os.path.exists(ASSETS_MANIFEST_PATH):
+            try:
+                with open(ASSETS_MANIFEST_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        manifest = data
+            except Exception:
+                manifest = {}
+        _assets_manifest = manifest
+        return _assets_manifest
+
+
+def _save_assets_manifest() -> None:
+    with _manifest_lock:
+        if _assets_manifest is None:
+            return
+        try:
+            os.makedirs(os.path.dirname(ASSETS_MANIFEST_PATH), exist_ok=True)
+            temp_file = ASSETS_MANIFEST_PATH + f".tmp.{os.getpid()}"
+            with open(temp_file, "w", encoding="utf-8") as f:
+                json.dump(_assets_manifest, f, indent=2)
+            os.replace(temp_file, ASSETS_MANIFEST_PATH)
+        except Exception:
+            pass
+
+
+def _parse_video_fps(fps_str: str) -> float:
+    try:
+        if "/" in str(fps_str):
+            num, den = str(fps_str).split("/")
+            return round(float(num) / float(den), 2)
+        return round(float(fps_str), 2)
+    except Exception:
+        return 30.0
+
+
+def get_video_metadata(video_path: str) -> Dict[str, Any]:
+    """Retrieve video metadata (duration, width, height, fps) using local manifest cache."""
+    if not os.path.exists(video_path):
+        return {"duration": 0.0, "width": 0, "height": 0, "fps": 0.0}
+
+    filename = os.path.basename(video_path)
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    try:
+        rel_key = os.path.relpath(os.path.abspath(video_path), base_dir).replace("\\", "/")
+    except Exception:
+        rel_key = filename
+
+    try:
+        stat = os.stat(video_path)
+        mtime = stat.st_mtime
+        size = stat.st_size
+    except Exception:
+        stat = None
+        mtime = 0.0
+        size = 0
+
+    manifest = _load_assets_manifest()
+    entry = manifest.get(filename) or manifest.get(rel_key)
+    if entry and isinstance(entry, dict) and "duration" in entry:
+        cached_mtime = entry.get("mtime")
+        cached_size = entry.get("size")
+        # If mtime and size match (or if manual entry without mtime/size), use cache
+        if cached_mtime is None or (stat is not None and cached_mtime == mtime and cached_size == size):
+            return entry
+
+    # Probe via ffprobe
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate:format=duration",
+        "-of", "json",
+        video_path,
+    ]
+    dur = 0.0
+    width = 0
+    height = 0
+    fps = 30.0
+    try:
+        probe = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        data = json.loads(probe.stdout)
+        if "format" in data and "duration" in data["format"]:
+            dur = max(0.0, float(data["format"]["duration"]))
+        streams = data.get("streams", [])
+        if streams:
+            width = int(streams[0].get("width", 0))
+            height = int(streams[0].get("height", 0))
+            fps = _parse_video_fps(streams[0].get("r_frame_rate", "30/1"))
+    except Exception:
+        pass
+
+    meta = {
+        "duration": round(dur, 2),
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "mtime": mtime,
+        "size": size,
+    }
+
+    if dur > 0.0 and stat is not None:
+        with _manifest_lock:
+            manifest[filename] = meta
+        _save_assets_manifest()
+
+    return meta
+
+
+def get_video_duration(video_path: str) -> float:
+    """Return a background clip's duration, using local manifest cache when valid."""
+    meta = get_video_metadata(video_path)
+    return float(meta.get("duration", 0.0))
+
+
+def prepare_background_assets(
+    is_yt_hindi: bool,
+    film_burn_intro: bool = False,
+) -> Dict[str, Any]:
+    """Discover and probe background assets while audio/lyrics are loading.
+
+    This stage intentionally does not choose random clips or create rendered
+    derivatives. Those operations depend on the final lyric timeline and are
+    kept in the renderer. It is therefore safe to run this function in
+    parallel with yt-dlp and lyric-provider requests.
+    """
+    prepared: Dict[str, Any] = {
+        "background_videos": [],
+        "background_durations": {},
+        "film_overlays": [],
+        "film_burn_sounds": [],
+    }
+    if not is_yt_hindi:
+        return prepared
+
+    background_videos = get_all_background_videos()
+    prepared["background_videos"] = background_videos
+    if background_videos:
+        durations: Dict[str, float] = {}
+        missing_videos: List[str] = []
+        manifest = _load_assets_manifest()
+
+        for vpath in background_videos:
+            fname = os.path.basename(vpath)
+            entry = manifest.get(fname)
+            try:
+                stat = os.stat(vpath)
+                if (
+                    entry
+                    and isinstance(entry, dict)
+                    and "duration" in entry
+                    and (entry.get("mtime") is None or (entry.get("mtime") == stat.st_mtime and entry.get("size") == stat.st_size))
+                ):
+                    durations[vpath] = float(entry["duration"])
+                    continue
+            except Exception:
+                pass
+            missing_videos.append(vpath)
+
+        if missing_videos:
+            max_workers = min(4, len(missing_videos))
+            with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="bg-probe") as probe_pool:
+                probed_durs = list(probe_pool.map(get_video_duration, missing_videos))
+                for vpath, dur in zip(missing_videos, probed_durs):
+                    durations[vpath] = dur
+
+        prepared["background_durations"] = durations
+
+    if film_burn_intro:
+        prepared["film_overlays"] = get_all_film_overlays()
+        prepared["film_burn_sounds"] = get_all_film_burn_sound_effects()
+
+    return prepared
+
+
+def _asset_cache_path(source_path: str, profile: str, extension: str = ".mp4") -> str:
+    """Build a cache key that changes when the source asset changes."""
+    source = os.path.abspath(source_path)
+    stat = os.stat(source)
+    identity = f"{source}|{stat.st_size}|{stat.st_mtime_ns}|{profile}".encode("utf-8")
+    digest = hashlib.sha1(identity).hexdigest()[:16]
+    cache_dir = os.path.join(os.path.dirname(__file__), "videos", "cache", profile)
+    os.makedirs(cache_dir, exist_ok=True)
+    stem = re.sub(r"[^A-Za-z0-9_-]+", "_", Path(source).stem)[:60].strip("_") or "asset"
+    return os.path.join(cache_dir, f"{stem}_{digest}{extension}")
+
+
+def normalize_video_asset(source_path: str, width: int, height: int, fps: int) -> str:
+    """Return a cached, frame-rate/pixel-format normalized video derivative."""
+    if not source_path or not os.path.exists(source_path):
+        return source_path
+
+    profile = f"video_{width}x{height}_{fps}fps"
+    try:
+        cached_path = _asset_cache_path(source_path, profile)
+    except OSError:
+        return source_path
+    if os.path.exists(cached_path) and os.path.getsize(cached_path) > 0:
+        return cached_path
+
+    # A fixed ``.part`` name races when two generations normalize the same
+    # source concurrently. Keep each in-flight derivative isolated, then use
+    # the atomic replace below to publish it to the cache.
+    temporary_path = (
+        f"{cached_path}.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.part"
+    )
+    command = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", source_path,
+        "-vf", f"scale={width}:{height}:force_original_aspect_ratio=increase,crop={width}:{height},setsar=1,fps={fps},format=yuv420p",
+        "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "18",
+        temporary_path,
+    ]
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if os.path.exists(temporary_path) and os.path.getsize(temporary_path) > 0:
+            os.replace(temporary_path, cached_path)
+            return cached_path
+    except Exception as error:
+        emit_progress("asset_cache_warning", 72, f"Asset normalization skipped for {os.path.basename(source_path)}: {type(error).__name__}")
+    finally:
+        if os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+    return source_path
+
+
+def normalize_audio_asset(source_path: str) -> str:
+    """Return a cached 44.1 kHz stereo AAC derivative for sound effects."""
+    if not source_path or not os.path.exists(source_path):
+        return source_path
+
+    try:
+        cached_path = _asset_cache_path(source_path, "audio_44100_stereo", ".m4a")
+    except OSError:
+        return source_path
+    if os.path.exists(cached_path) and os.path.getsize(cached_path) > 0:
+        return cached_path
+
+    temporary_path = (
+        f"{cached_path}.{os.getpid()}_{threading.get_ident()}_{time.time_ns()}.part"
+    )
+    command = [
+        "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+        "-i", source_path,
+        "-vn", "-ar", "44100", "-ac", "2",
+        "-c:a", "aac", "-b:a", "192k", temporary_path,
+    ]
+    try:
+        subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if os.path.exists(temporary_path) and os.path.getsize(temporary_path) > 0:
+            os.replace(temporary_path, cached_path)
+            return cached_path
+    except Exception as error:
+        emit_progress("asset_cache_warning", 72, f"Audio normalization skipped for {os.path.basename(source_path)}: {type(error).__name__}")
+    finally:
+        if os.path.exists(temporary_path):
+            try:
+                os.remove(temporary_path)
+            except OSError:
+                pass
+    return source_path
 
 
 def get_random_background_video() -> Optional[str]:
@@ -2386,20 +2678,7 @@ def get_audio_duration(audio_path: str) -> float:
         return 180.0
 
 
-def get_video_duration(video_path: str) -> float:
-    """Return a background clip's duration, or 0 when it cannot be probed."""
-    cmd = [
-        "ffprobe", "-v", "error",
-        "-show_entries", "format=duration",
-        "-of", "default=noprint_wrappers=1:nokey=1",
-        video_path,
-    ]
-    try:
-        probe = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
-        return max(0.0, float(probe.stdout.strip()))
-    except Exception:
-        return 0.0
-
+# (get_video_duration is implemented above with asset manifest caching)
 
 def get_pillow_font(font_name: str, size: int):
     font_lower = (font_name or "").lower()
@@ -2439,7 +2718,8 @@ def render_exact_pillow_overlay_video(
     brat_theme: str = "green",
     blur_amount: float = 1.8,
     spacing: Optional[int] = None,
-    word_spacing: Optional[int] = None
+    word_spacing: Optional[int] = None,
+    preview_quality: str = "final"
 ) -> str:
     """Renders 100% pixel-perfect Gaussian blur and word-by-word typography typing using Pillow rasterization and FFmpeg concat overlay."""
     is_portrait = (aspect_ratio.lower() == "portrait" or aspect_ratio == "9:16")
@@ -2611,7 +2891,7 @@ def render_exact_pillow_overlay_video(
     with open(manifest_path, "w", encoding="utf-8") as mf:
         mf.write("\n".join(concat_lines) + "\n")
 
-    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    encoder_name, encoder_flags = get_encoder_for_quality(preview_quality)
 
     cmd = [
         "ffmpeg", "-y", "-threads", "0",
@@ -2656,7 +2936,8 @@ def render_lyric_video_ffmpeg(
     bg_color: str = "black",
     is_brat: bool = False,
     blur_amount: Optional[float] = None,
-    clean_base: bool = False
+    clean_base: bool = False,
+    preview_quality: str = "final"
 ) -> str:
     """Step 3: Run FFmpeg to render clean base or ASS burned subtitles over MP4 video."""
     if not duration or duration <= 0:
@@ -2667,7 +2948,7 @@ def render_lyric_video_ffmpeg(
     res_w = 1080 if is_portrait else 1920
     res_h = 1920 if is_portrait else 1080
 
-    encoder_name, encoder_flags = detect_fastest_h264_encoder()
+    encoder_name, encoder_flags = get_encoder_for_quality(preview_quality)
     mode_desc = "Clean Base Video" if clean_base else "Burned Subtitles Video"
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering {res_str} 30fps MP4 {mode_desc} using {encoder_name} (BG: {bg_color}, {duration:.1f}s)...")
     
@@ -2733,6 +3014,8 @@ def render_yt_hindi_video_ffmpeg(
     song_title: str = "",
     orig_first_cue_start: float = 0.0,
     orig_second_cue_start: float = 0.0,
+    prepared_assets: Optional[Dict[str, Any]] = None,
+    tempo_transition_seconds: Optional[float] = None,
 ) -> str:
     """
     Renders complete YT Hindi Type video where:
@@ -2834,23 +3117,27 @@ def render_yt_hindi_video_ffmpeg(
             canvas_height=res_h,
             output_png_path=intro_png
         )
-        overlay_pool = get_all_film_overlays()
+        prepared_assets = prepared_assets or {}
+        overlay_pool = prepared_assets.get("film_overlays") or get_all_film_overlays()
         if overlay_pool:
-            chosen_overlay_video = random.choice(overlay_pool)
+            chosen_overlay_video = normalize_video_asset(
+                random.choice(overlay_pool), res_w, res_h, fps
+            )
             print(f"[YT Hindi Intro] Selected film overlay video: {os.path.basename(chosen_overlay_video)} (burn_dur={burn_dur:.2f}s, audio_delay={audio_delay:.2f}s)")
-        sound_pool = get_all_film_burn_sound_effects()
+        sound_pool = prepared_assets.get("film_burn_sounds") or get_all_film_burn_sound_effects()
         if sound_pool:
-            chosen_film_burn_sound = random.choice(sound_pool)
+            chosen_film_burn_sound = normalize_audio_asset(random.choice(sound_pool))
             print(f"[YT Hindi Intro] Selected sound effect: {os.path.basename(chosen_film_burn_sound)}")
 
-    encoder_name, encoder_flags = detect_fastest_h264_encoder()
-    if is_fast:
-        encoder_name = "libx264"
-        encoder_flags = ["-preset", "ultrafast", "-crf", "26"]
+    encoder_name, encoder_flags = get_encoder_for_quality(preview_quality)
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering YT Hindi Type {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    transition_seconds = detect_tempo_transition_seconds(audio_path)
+    transition_seconds = (
+        tempo_transition_seconds
+        if tempo_transition_seconds is not None
+        else detect_tempo_transition_seconds(audio_path)
+    )
     emit_progress(
         "tempo_detected",
         76,
@@ -2932,7 +3219,8 @@ def render_yt_hindi_video_ffmpeg(
             for i in range(num_seg)
         ]
 
-    all_bg_videos = get_all_background_videos()
+    prepared_assets = prepared_assets or {}
+    all_bg_videos = prepared_assets.get("background_videos") or get_all_background_videos()
     lyric_png_paths = []
     if all_bg_videos and timeline_segments:
         num_segments = len(timeline_segments)
@@ -2940,7 +3228,9 @@ def render_yt_hindi_video_ffmpeg(
         clips_needed = (num_segments - 1) if (film_burn_intro and num_segments > 1) else num_segments
         selected_clips = []
         selected_clip_loops = []
-        clip_durations = {path: get_video_duration(path) for path in all_bg_videos}
+        clip_durations = prepared_assets.get("background_durations") or {
+            path: get_video_duration(path) for path in all_bg_videos
+        }
         last_clip = None
         shuffled_pool = []
         segment_durations = [
@@ -2971,6 +3261,21 @@ def render_yt_hindi_video_ffmpeg(
             selected_clips.append(chosen)
             selected_clip_loops.append(False)
             last_clip = chosen
+
+        # Normalize independently selected clips concurrently. The final
+        # composition remains a single FFmpeg process; only preparation work
+        # is parallelized here.
+        if selected_clips:
+            with ThreadPoolExecutor(
+                max_workers=min(4, len(selected_clips)),
+                thread_name_prefix="bg-normalize",
+            ) as normalize_pool:
+                selected_clips = list(
+                    normalize_pool.map(
+                        lambda path: normalize_video_asset(path, res_w, res_h, fps),
+                        selected_clips,
+                    )
+                )
 
         print(f"[YT Hindi] Merging {num_segments} segments ({clips_needed} video clips, intro on black plain={film_burn_intro})")
 
@@ -3267,10 +3572,7 @@ def render_master_lyric_video_ffmpeg(
     fps = 24
 
     is_fast = (preview_quality or "").lower() in ("fast", "draft", "preview")
-    encoder_name, encoder_flags = detect_fastest_h264_encoder()
-    if is_fast:
-        encoder_name = "libx264"
-        encoder_flags = ["-preset", "ultrafast", "-crf", "26"]
+    encoder_name, encoder_flags = get_encoder_for_quality(preview_quality)
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering Master Lyric {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
@@ -3570,48 +3872,80 @@ def generate_lyric_video(
     effective_aspect = aspect_ratio or tpl["aspect_ratio"]
     effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
     trimmed_audio = None
+    is_film_burn_render = is_yt_hindi and (
+        tpl_id == "yt_hindi_intro" or yt_hindi_variant == "film_burn"
+    )
 
     emit_progress("init", 5, f"Initiating Generator with {tpl['name']} ({placement}, Lang: {lang})...")
 
-    if audio_file and os.path.exists(audio_file):
-        audio_path = audio_file
-        duration = get_audio_duration(audio_path)
-        cues = []
-        if cues_file and os.path.exists(cues_file):
-            try:
-                with open(cues_file, "r", encoding="utf-8") as cf:
-                    loaded = json.load(cf)
-                    if isinstance(loaded, list):
-                        for item in loaded:
-                            if isinstance(item, dict) and "text" in item:
-                                s_t = float(item.get("timeSeconds", 0.0))
-                                e_t = float(item.get("endSeconds", s_t + 2.5))
-                                cues.append((s_t, e_t, str(item["text"])))
-                            elif isinstance(item, (list, tuple)) and len(item) >= 3:
-                                cues.append((float(item[0]), float(item[1]), str(item[2])))
-            except Exception as e:
-                print(f"[WARN] Error reading cues file: {e}", file=sys.stderr)
-        yt_data = {
-            "audio_path": audio_path,
-            "duration": duration,
-            "cues": cues,
-            "title": song_query,
-            "uploader": "YouTube Video"
-        }
-    else:
-        yt_data = download_youtube_audio(
-            query_or_url=song_query,
-            output_audio_path=temp_audio_path,
-            target_lang=lang
-        )
-        audio_path = yt_data["audio_path"]
-        if is_yt_hindi:
-            # The downloaded/converted audio is the timing authority for this
-            # template. YouTube metadata can differ by padding or encoder
-            # delay and cause the concatenated lyric timeline to drift.
-            duration = get_audio_duration(audio_path) or yt_data["duration"]
+    # Asset discovery/probing is independent of audio and lyrics. Start it
+    # before the network-bound audio/lyrics operation so both pipelines make
+    # progress at the same time. The returned metadata is consumed only after
+    # the lyric timeline is known.
+    preparation_pool = ThreadPoolExecutor(max_workers=3, thread_name_prefix="lyric-prep")
+    background_future = preparation_pool.submit(
+        prepare_background_assets,
+        is_yt_hindi=is_yt_hindi,
+        film_burn_intro=is_film_burn_render,
+    )
+    tempo_future = None
+    try:
+        if audio_file and os.path.exists(audio_file):
+            audio_path = audio_file
+            duration = get_audio_duration(audio_path)
+            cues = []
+            if cues_file and os.path.exists(cues_file):
+                try:
+                    with open(cues_file, "r", encoding="utf-8") as cf:
+                        loaded = json.load(cf)
+                        if isinstance(loaded, list):
+                            for item in loaded:
+                                if isinstance(item, dict) and "text" in item:
+                                    s_t = float(item.get("timeSeconds", 0.0))
+                                    e_t = float(item.get("endSeconds", s_t + 2.5))
+                                    cues.append((s_t, e_t, str(item["text"])))
+                                elif isinstance(item, (list, tuple)) and len(item) >= 3:
+                                    cues.append((float(item[0]), float(item[1]), str(item[2])))
+                except Exception as e:
+                    print(f"[WARN] Error reading cues file: {e}", file=sys.stderr)
+            yt_data = {
+                "audio_path": audio_path,
+                "duration": duration,
+                "cues": cues,
+                "title": song_query,
+                "uploader": "YouTube Video"
+            }
         else:
-            duration = yt_data["duration"]
+            audio_future = preparation_pool.submit(
+                download_youtube_audio,
+                query_or_url=song_query,
+                output_audio_path=temp_audio_path,
+                target_lang=lang,
+            )
+            yt_data = audio_future.result()
+            audio_path = yt_data["audio_path"]
+            if is_yt_hindi:
+                # The downloaded/converted audio is the timing authority for
+                # this template. YouTube metadata can differ by padding or
+                # encoder delay and cause the lyric timeline to drift.
+                duration = get_audio_duration(audio_path) or yt_data["duration"]
+            else:
+                duration = yt_data["duration"]
+
+        # Aubio needs the completed audio file, but is independent of asset
+        # probing and the later timeline calculations.
+        if is_yt_hindi and audio_path:
+            tempo_future = preparation_pool.submit(
+                detect_tempo_transition_seconds,
+                audio_path,
+            )
+
+        prepared_assets = background_future.result()
+        tempo_transition_seconds = tempo_future.result() if tempo_future else None
+    finally:
+        # No preparation task is allowed to outlive this orchestration phase;
+        # all renderer inputs are fully materialized before rendering starts.
+        preparation_pool.shutdown(wait=True)
 
     # If no usable lyrics found across all providers, stop before FFmpeg rendering
     if not yt_data.get("cues"):
@@ -3632,9 +3966,6 @@ def generate_lyric_video(
     requested_end = float(end_seconds) if end_seconds is not None else None
     test_start = requested_start
     test_end = min(duration, requested_end if requested_end is not None else duration)
-    is_film_burn_render = is_yt_hindi and (
-        tpl_id == "yt_hindi_intro" or yt_hindi_variant == "film_burn"
-    )
     film_burn_preroll_seconds = 0.0
     film_burn_intro_seconds = 0.0
     orig_first_cue_start = 0.0
@@ -3714,11 +4045,14 @@ def generate_lyric_video(
         film_burn_preroll_seconds = audio_preroll
         audio_trim_start = max(0.0, test_start - audio_preroll)
         audio_trim_duration = trim_dur + audio_preroll
-        trimmed_audio = temp_audio_path.replace(".mp3", f"_trimmed_{int(test_start)}_{int(test_end)}.mp3")
+        audio_ext = Path(audio_path).suffix or ".m4a"
+        audio_stem = Path(audio_path).stem
+        trimmed_audio = str(Path(audio_path).with_name(f"{audio_stem}_trimmed_{int(test_start)}_{int(test_end)}{audio_ext}"))
+        audio_codec = ["-c:a", "aac", "-b:a", "192k"] if audio_ext.lower() in (".m4a", ".mp4", ".aac") else ["-c:a", "libmp3lame", "-b:a", "192k"]
         trim_result = subprocess.run([
             "ffmpeg", "-y", "-ss", f"{audio_trim_start:.3f}", "-t", f"{audio_trim_duration:.3f}",
-            "-i", audio_path, "-c:a", "libmp3lame", "-b:a", "192k", trimmed_audio
-        ], capture_output=True, text=True)
+            "-i", audio_path
+        ] + audio_codec + [trimmed_audio], capture_output=True, text=True)
         if trim_result.returncode != 0 or not os.path.exists(trimmed_audio):
             detail = (trim_result.stderr or "FFmpeg did not create the trimmed audio file.").strip()
             raise RuntimeError(f"Could not prepare the requested audio segment: {detail[-600:]}")
@@ -3786,6 +4120,8 @@ def generate_lyric_video(
             song_title=intro_song_title or "This Song",
             orig_first_cue_start=orig_first_cue_start,
             orig_second_cue_start=orig_second_cue_start,
+            prepared_assets=prepared_assets,
+            tempo_transition_seconds=tempo_transition_seconds,
         )
 
     elif tpl_id == "master_lyrics":
@@ -3811,7 +4147,8 @@ def generate_lyric_video(
             bg_color=bg_color,
             is_brat=is_brat,
             blur_amount=blur_amount,
-            clean_base=True
+            clean_base=True,
+            preview_quality=preview_quality
         )
     else:
         try:
@@ -3830,7 +4167,8 @@ def generate_lyric_video(
                 brat_theme=brat_theme,
                 blur_amount=blur_amount or 1.8,
                 spacing=spacing,
-                word_spacing=word_spacing
+                word_spacing=word_spacing,
+                preview_quality=preview_quality
             )
         except Exception as err:
             print(f"[WARN] Pillow overlay note: {err}. Falling back to ASS render.", file=sys.stderr)
@@ -3843,7 +4181,8 @@ def generate_lyric_video(
                 bg_color=bg_color,
                 is_brat=is_brat,
                 blur_amount=blur_amount,
-                clean_base=False
+                clean_base=False,
+                preview_quality=preview_quality
             )
 
     final_result = {
@@ -3874,6 +4213,14 @@ def generate_lyric_video(
     }
 
     is_portrait_output = effective_aspect.lower() == "portrait" or effective_aspect == "9:16"
+    is_fast_preview = (preview_quality or "").lower() in ("fast", "draft", "preview")
+    # Only YT Hindi currently changes its canvas size for a fast preview.
+    # Other templates retain their production canvas and only change encoder
+    # settings, so the reported resolution remains truthful.
+    if is_yt_hindi and is_fast_preview:
+        output_resolution = "540x960"
+    else:
+        output_resolution = "1080x1920" if is_portrait_output else "1920x1080"
     final_result["metrics"] = build_generation_metrics(
         started_at=generation_started_at,
         cpu_started_at=generation_cpu_started_at,
@@ -3881,8 +4228,8 @@ def generate_lyric_video(
         output_path=output_path,
         video_duration=duration,
         encoder_name=(_CACHED_ENCODER[0] if _CACHED_ENCODER else "unknown"),
-        resolution="1080x1920" if is_portrait_output else "1920x1080",
-        fps=24 if preview_quality == "fast" else 30,
+        resolution=output_resolution,
+        fps=24 if (preview_quality or "").lower() in ("fast", "draft", "preview") else 30,
     )
 
     # Automatically clean up temporary trimmed audio files

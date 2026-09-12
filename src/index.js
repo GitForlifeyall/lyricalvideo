@@ -333,11 +333,15 @@ app.post('/api/quick-burn-video', async (req, res) => {
 
     const resolvedAudio = (audioPath && fs.existsSync(audioPath))
       ? audioPath
-      : (fs.existsSync(path.join(VIDEOS_DIR, 'temp_audio.mp3'))
-        ? path.join(VIDEOS_DIR, 'temp_audio.mp3')
-        : (fs.existsSync(path.join(__dirname, '../temp_audio.mp3'))
-          ? path.join(__dirname, '../temp_audio.mp3')
-          : null));
+      : (fs.existsSync(path.join(VIDEOS_DIR, 'temp_audio.m4a'))
+        ? path.join(VIDEOS_DIR, 'temp_audio.m4a')
+        : (fs.existsSync(path.join(VIDEOS_DIR, 'temp_audio.mp3'))
+          ? path.join(VIDEOS_DIR, 'temp_audio.mp3')
+          : (fs.existsSync(path.join(__dirname, '../temp_audio.m4a'))
+            ? path.join(__dirname, '../temp_audio.m4a')
+            : (fs.existsSync(path.join(__dirname, '../temp_audio.mp3'))
+              ? path.join(__dirname, '../temp_audio.mp3')
+              : null))));
 
     if (resolvedAudio) {
       pythonArgs.push(`--audio-file=${resolvedAudio}`);

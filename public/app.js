@@ -1057,7 +1057,9 @@ function handleGenerationComplete(data, isBurned = false) {
 
   // Populate Studio Stage
   stageSongTitle.textContent = data.metadata?.track_name || data.query;
-  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; 1080p MP4 (${isPortrait ? '9:16 Portrait' : '16:9 Landscape'}) &bull; ${tplUsed.toUpperCase()}`;
+  const outputResolution = data.metadata?.metrics?.resolution || (isPortrait ? '1080x1920' : '1920x1080');
+  const outputShape = isPortrait ? '9:16 Portrait' : '16:9 Landscape';
+  stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; ${outputResolution} MP4 (${outputShape}) &bull; ${tplUsed.toUpperCase()}`;
 
   // Toggle Portrait frame styling on video container
   if (videoPreviewWrapper) {

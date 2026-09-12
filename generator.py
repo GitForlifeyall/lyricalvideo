@@ -15,12 +15,19 @@ import textwrap
 import tempfile
 
 import subprocess
+import shutil
+import ctypes
+import ctypes.wintypes
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 import time
 import requests
 import yt_dlp
+try:
+    from ytmusicapi import YTMusic
+except ImportError:
+    YTMusic = None
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
 YT_HINDI_TRANSITION_SECONDS = 0.42
@@ -148,6 +155,85 @@ def emit_progress(step: str, percent: int, message: str, details: Optional[Dict[
         print(f"__JSON_PROGRESS__{json.dumps(payload)}", flush=True)
     else:
         print(f"[{percent}% - {step}] {message}", flush=True)
+
+
+def get_peak_memory_mb() -> Optional[float]:
+    """Return this Python process's peak resident memory, when available."""
+    try:
+        if os.name == "nt":
+            class PROCESS_MEMORY_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("cb", ctypes.wintypes.DWORD),
+                    ("PageFaultCount", ctypes.wintypes.DWORD),
+                    ("PeakWorkingSetSize", ctypes.c_size_t),
+                    ("WorkingSetSize", ctypes.c_size_t),
+                    ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                    ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                    ("PagefileUsage", ctypes.c_size_t),
+                    ("PeakPagefileUsage", ctypes.c_size_t),
+                ]
+
+            counters = PROCESS_MEMORY_COUNTERS()
+            counters.cb = ctypes.sizeof(PROCESS_MEMORY_COUNTERS)
+            get_process_memory_info = ctypes.windll.psapi.GetProcessMemoryInfo
+            get_process_memory_info(
+                ctypes.windll.kernel32.GetCurrentProcess(),
+                ctypes.byref(counters),
+                counters.cb,
+            )
+            return round(counters.PeakWorkingSetSize / (1024 * 1024), 2)
+
+        import resource
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        # Linux reports KB; macOS reports bytes.
+        return round(peak / (1024 if peak < 10_000_000 else 1024 * 1024), 2)
+    except Exception:
+        return None
+
+
+def build_generation_metrics(
+    started_at: float,
+    cpu_started_at: float,
+    render_started_at: Optional[float],
+    output_path: str,
+    video_duration: float,
+    encoder_name: str,
+    resolution: str,
+    fps: int,
+) -> Dict[str, Any]:
+    """Build stable metrics for comparing render optimizations."""
+    wall_seconds = max(0.0, time.perf_counter() - started_at)
+    render_seconds = (
+        max(0.0, time.perf_counter() - render_started_at)
+        if render_started_at is not None else None
+    )
+    cpu_seconds = max(0.0, time.process_time() - cpu_started_at)
+    output_size_mb = None
+    try:
+        output_size_mb = round(os.path.getsize(output_path) / (1024 * 1024), 2)
+    except OSError:
+        pass
+
+    metrics = {
+        "wall_time_seconds": round(wall_seconds, 2),
+        "render_time_seconds": round(render_seconds, 2) if render_seconds is not None else None,
+        "python_cpu_time_seconds": round(cpu_seconds, 2),
+        "python_cpu_utilization_percent": round((cpu_seconds / wall_seconds) * 100, 1) if wall_seconds else 0.0,
+        "peak_memory_mb": get_peak_memory_mb(),
+        "output_size_mb": output_size_mb,
+        "video_duration_seconds": round(float(video_duration or 0.0), 2),
+        "render_speed_x": round(float(video_duration or 0.0) / wall_seconds, 2) if wall_seconds else 0.0,
+        "render_speed_x_excluding_download": (
+            round(float(video_duration or 0.0) / render_seconds, 2)
+            if render_seconds else None
+        ),
+        "encoder": encoder_name,
+        "resolution": resolution,
+        "fps": fps,
+    }
+    return metrics
 
 
 def fetch_direct_youtube_subtitles(video_info: Dict[str, Any], target_lang: str = "auto") -> Tuple[List[Tuple[float, float, str]], str]:
@@ -494,6 +580,96 @@ def fetch_spotify_track_metadata(spotify_url: str) -> Dict[str, Any]:
         return {}
 
 
+def find_ytmusic_audio_url(title: str, artists: str) -> Optional[str]:
+    """Find a Spotify track through YouTube Music's Song search category."""
+    if YTMusic is None or not title:
+        return None
+    try:
+        client = YTMusic()
+        query = f"{title} {artists}".strip()
+        results = client.search(query)
+        if not results and artists:
+            results = client.search(title)
+        songs = [item for item in results if item.get("resultType") == "song"]
+        title_key = re.sub(r"[^\w\s]", "", title.casefold()).strip()
+        exact_title = [
+            item for item in songs
+            if title_key and title_key in re.sub(
+                r"[^\w\s]", "", str(item.get("title") or "").casefold()
+            )
+        ]
+        selected = exact_title[0] if exact_title else (songs[0] if songs else None)
+        video_id = selected.get("videoId") if selected else None
+        if video_id:
+            return f"https://music.youtube.com/watch?v={video_id}"
+    except Exception as exc:
+        emit_progress("ytmusic_warning", 30, f"YouTube Music lookup unavailable: {type(exc).__name__}")
+    return None
+
+
+def fetch_spotify_direct_lyrics(track_id: str) -> Tuple[List[Tuple[float, float, str]], str]:
+    """Fetch synced lyrics directly from Spotify's web-player lyric service."""
+    if not SPOTIFY_SP_DC:
+        return [], "none"
+
+    common_headers = {
+        "User-Agent": BROWSER_HEADERS["User-Agent"],
+        "App-Platform": "WebPlayer",
+        "Accept": "application/json",
+        "Origin": "https://open.spotify.com",
+        "Referer": "https://open.spotify.com/",
+    }
+    try:
+        token_response = requests.get(
+            "https://open.spotify.com/get_access_token",
+            params={"reason": "transport", "productType": "web_player"},
+            headers={**common_headers, "Cookie": f"sp_dc={SPOTIFY_SP_DC}"},
+            timeout=8,
+        )
+        if not token_response.ok:
+            print(f"[Spotify Direct Lyrics] token request failed: HTTP {token_response.status_code}")
+            return [], "none"
+        access_token = token_response.json().get("accessToken")
+        if not access_token:
+            return [], "none"
+
+        lyrics_response = requests.get(
+            f"https://spclient.wg.spotify.com/color-lyrics/v2/track/{track_id}",
+            params={"format": "json", "market": "from_token", "vocalRemoval": "false"},
+            headers={**common_headers, "Authorization": f"Bearer {access_token}"},
+            timeout=8,
+        )
+        if not lyrics_response.ok:
+            print(f"[Spotify Direct Lyrics] lyrics request failed: HTTP {lyrics_response.status_code}")
+            return [], "none"
+        lyrics_payload = lyrics_response.json().get("lyrics", {})
+        if lyrics_payload.get("syncType", "").upper() == "UNSYNCED":
+            return [], "none"
+
+        raw_lines = lyrics_payload.get("lines", [])
+        timed_lines = []
+        for item in raw_lines:
+            try:
+                start_ms = float(item.get("startTimeMs") or 0)
+                text_value = (item.get("words") or "").strip()
+            except (TypeError, ValueError):
+                continue
+            if text_value and not is_lyric_metadata(text_value):
+                timed_lines.append((start_ms / 1000.0, text_value))
+
+        cues = []
+        for index, (start, text_value) in enumerate(timed_lines):
+            next_start = timed_lines[index + 1][0] if index + 1 < len(timed_lines) else start + 3.5
+            cues.append((start, max(start + 1.2, next_start), text_value))
+        if len(cues) > 1 and max(cue[0] for cue in cues) - min(cue[0] for cue in cues) >= 0.5:
+            return cues, "spotify"
+    except requests.RequestException as exc:
+        print(f"[Spotify Direct Lyrics] network request failed ({type(exc).__name__})")
+    except Exception as exc:
+        print(f"[Spotify Direct Lyrics] unavailable ({type(exc).__name__})")
+    return [], "none"
+
+
 def fetch_spotify_lyrics(song_title: str, artist_name: str = "", duration: float = 0.0) -> Tuple[List[Tuple[float, float, str]], str]:
     """
     Fetch synced lyrics from Spotify via local/Docker akashrchandran/spotify-lyrics-api REST API.
@@ -503,7 +679,7 @@ def fetch_spotify_lyrics(song_title: str, artist_name: str = "", duration: float
     """
     try:
         # Check if direct Spotify link was provided
-        direct_match = re.search(r'spotify\.com/track/([a-zA-Z0-9]{22})', song_title)
+        direct_match = re.search(r'(?:spotify\.com/track/|spotify:track:)([a-zA-Z0-9]{22})', song_title)
         if direct_match:
             track_ids = [direct_match.group(1)]
             search_query = song_title
@@ -595,7 +771,14 @@ def fetch_spotify_lyrics(song_title: str, artist_name: str = "", duration: float
                         break
 
 
-        # 2. Query spotify-lyrics-api for candidate track IDs
+        # 2. Query Spotify directly first when a track ID and SP_DC are available.
+        if track_ids:
+            direct_cues, direct_lang = fetch_spotify_direct_lyrics(track_ids[0])
+            if direct_cues:
+                emit_progress("spotify_done", 46, f"Retrieved {len(direct_cues)} synced lines directly from Spotify")
+                return direct_cues, direct_lang
+
+        # 3. Legacy local API fallback for environments that still run it.
         for tid in track_ids[:3]:
             try:
                 lrc_resp = requests.get(
@@ -790,17 +973,66 @@ _CACHED_ENCODER = None
 
 
 def detect_fastest_h264_encoder() -> Tuple[str, List[str]]:
-    """Automatically detect if GPU hardware acceleration (NVENC, AMF, MF) is available."""
+    """Return the fastest usable H.264 encoder advertised by the local FFmpeg.
+
+    Listing encoders avoids attempting unsupported binaries unnecessarily. A
+    tiny encode still validates the driver, because FFmpeg can advertise an
+    encoder that is unavailable at runtime (for example when its GPU driver is
+    missing).
+    """
     global _CACHED_ENCODER
     if _CACHED_ENCODER is not None:
         return _CACHED_ENCODER
 
-    test_candidates = [
-        ("h264_nvenc", ["-preset", "p1", "-cq", "19"]),
-        ("h264_amf", ["-quality", "speed", "-rc", "cqp", "-qp_i", "19", "-qp_p", "19"]),
-        ("h264_mf", ["-rate_control", "cbr", "-b:v", "3M"]),
-        ("libx264", ["-preset", "ultrafast", "-tune", "fastdecode", "-crf", "18"]),
+    fallback = ("libx264", ["-preset", "ultrafast", "-tune", "fastdecode", "-crf", "18"])
+    encoder_flags = {
+        "h264_nvenc": ["-preset", "p1", "-cq", "19"],
+        "h264_qsv": ["-preset", "veryfast"],
+        "h264_amf": ["-quality", "speed", "-rc", "cqp", "-qp_i", "19", "-qp_p", "19"],
+        "h264_videotoolbox": [],
+        "h264_mf": ["-rate_control", "cbr", "-b:v", "3M"],
+        "libx264": fallback[1],
+    }
+
+    try:
+        encoder_result = subprocess.run(
+            ["ffmpeg", "-hide_banner", "-encoders"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False,
+        )
+        available_encoders = encoder_result.stdout + encoder_result.stderr
+    except (OSError, subprocess.SubprocessError):
+        available_encoders = ""
+
+    # Keep this order aligned with hardware throughput on typical consumer
+    # systems, with Media Foundation retained for Windows-only FFmpeg builds.
+    candidate_names = [
+        "h264_nvenc",
+        "h264_qsv",
+        "h264_amf",
+        "h264_videotoolbox",
+        "h264_mf",
+        "libx264",
     ]
+    test_candidates = [
+        (name, encoder_flags[name])
+        for name in candidate_names
+        if re.search(rf"\b{re.escape(name)}\b", available_encoders)
+    ]
+
+    # If encoder listing failed, retain the old behavior and let the encode
+    # probe determine what the installed FFmpeg can actually use.
+    if not test_candidates:
+        test_candidates = [
+            ("h264_nvenc", ["-preset", "p1", "-cq", "19"]),
+            ("h264_qsv", ["-preset", "veryfast"]),
+            ("h264_amf", ["-quality", "speed", "-rc", "cqp", "-qp_i", "19", "-qp_p", "19"]),
+            ("h264_videotoolbox", []),
+            ("h264_mf", ["-rate_control", "cbr", "-b:v", "3M"]),
+            fallback,
+        ]
 
     for enc_name, extra_flags in test_candidates:
         cmd = [
@@ -815,7 +1047,7 @@ def detect_fastest_h264_encoder() -> Tuple[str, List[str]]:
         except Exception:
             pass
 
-    _CACHED_ENCODER = ("libx264", ["-preset", "ultrafast", "-tune", "fastdecode", "-crf", "18"])
+    _CACHED_ENCODER = fallback
     return _CACHED_ENCODER
 
 
@@ -828,11 +1060,18 @@ def download_youtube_audio(
     emit_progress("ytdlp_start", 15, f"Searching YouTube for '{query_or_url}' (Language: {target_lang})...")
     audio_basename = str(Path(output_audio_path).with_suffix(""))
 
-    if os.path.exists(output_audio_path):
+    # Remove leftovers from interrupted yt-dlp/FFmpeg runs. On Windows a
+    # stale .part file can prevent yt-dlp from renaming the completed stream.
+    stale_prefix = Path(audio_basename)
+    for stale_file in stale_prefix.parent.glob(f"{stale_prefix.name}.*"):
         try:
-            os.remove(output_audio_path)
+            stale_file.unlink()
         except OSError:
-            pass
+            emit_progress(
+                "ytdlp_cleanup_warning",
+                16,
+                f"Could not remove locked temporary audio file: {stale_file.name}",
+            )
 
     is_youtube_url = ("youtube.com" in query_or_url or "youtu.be" in query_or_url)
     is_search_query = False
@@ -840,12 +1079,15 @@ def download_youtube_audio(
     expected_duration = 0.0
     expected_title = ""
     expected_artists = ""
+    spotify_priority_cues: List[Tuple[float, float, str]] = []
     if "spotify.com/track/" in query_or_url or query_or_url.startswith("spotify:track:"):
         spotify_metadata = fetch_spotify_track_metadata(query_or_url)
         expected_title = spotify_metadata.get("title") or ""
         expected_artists = spotify_metadata.get("artists") or ""
         expected_duration = float(spotify_metadata.get("duration") or 0)
-        sp_title = f"{expected_artists} - {expected_title}".strip(" -") or query_or_url
+        # Put the song title first: YouTube search generally weights the
+        # leading terms more heavily than trailing artist metadata.
+        sp_title = f"{expected_title} {expected_artists}".strip() or query_or_url
         try:
             if not expected_title:
                 oembed_resp = requests.get(f"https://open.spotify.com/oembed?url={query_or_url}", timeout=4)
@@ -853,12 +1095,34 @@ def download_youtube_audio(
                     sp_title = oembed_resp.json().get("title", query_or_url)
         except Exception:
             pass
-        search_target = f"ytsearch20:{sp_title}"
-        is_search_query = True
+        ytmusic_url = find_ytmusic_audio_url(expected_title, expected_artists)
+        if ytmusic_url:
+            search_target = ytmusic_url
+            is_search_query = False
+            emit_progress(
+                "ytmusic_selected",
+                30,
+                "Selected the matching YouTube Music Song result for audio download...",
+            )
+        else:
+            search_target = f"ytsearch10:{sp_title}"
+            is_search_query = True
+        emit_progress("spotify_priority", 18, "Fetching synced lyrics from Spotify first...")
+        spotify_priority_cues, spotify_priority_lang = fetch_spotify_lyrics(
+            query_or_url,
+            expected_artists,
+            expected_duration,
+        )
+        if spotify_priority_cues:
+            emit_progress(
+                "spotify_priority_done",
+                22,
+                f"Spotify synced lyrics found ({len(spotify_priority_cues)} lines); using Spotify as the primary lyrics source.",
+            )
     elif is_youtube_url:
         search_target = query_or_url
     else:
-        search_target = f"ytsearch20:{query_or_url}"
+        search_target = f"ytsearch10:{query_or_url}"
         is_search_query = True
 
 
@@ -887,6 +1151,9 @@ def download_youtube_audio(
         "http_headers": BROWSER_HEADERS,
         "retries": 3,
         "fragment_retries": 3,
+        "file_access_retries": 10,
+        "overwrites": True,
+        "continuedl": False,
     }
 
     emit_progress("ytdlp_downloading", 35, f"Extracting audio track and fetching captions in '{target_lang}'...")
@@ -897,9 +1164,9 @@ def download_youtube_audio(
         # URL remains authoritative and is never silently replaced.
         if is_search_query:
             search_opts = dict(ydl_opts)
-            # Flat search entries frequently omit the channel and catalogue
-            # metadata needed to distinguish Topic audio from uploads.
-            search_opts["extract_flat"] = False
+            # Search metadata already provides title, duration, and video URL;
+            # fully extract only the selected result below for speed.
+            search_opts["extract_flat"] = True
             with yt_dlp.YoutubeDL(search_opts) as search_ydl:
                 search_info = search_ydl.extract_info(search_target, download=False)
             candidates = search_info.get("entries", []) if isinstance(search_info, dict) else []
@@ -935,10 +1202,85 @@ def download_youtube_audio(
                 # For Spotify links, compare against Spotify's exact track
                 # duration and title. This is Sunnify's key matching step.
                 selection_pool = candidates
+                # YouTube Music's catalogue audio is normally exposed on
+                # auto-generated "Artist - Topic" channels. Prefer those
+                # entries before considering ordinary uploads, which may be
+                # music videos, 8D edits, lyric videos, or fan reuploads.
+                topic_candidates = [
+                    item for item in candidates
+                    if re.search(
+                        r"(?:^|\s)-\s*topic\s*$|\btopic\b",
+                        " ".join(
+                            str(item.get(field) or "")
+                            for field in ("channel", "uploader", "creator", "title")
+                        ),
+                        flags=re.I,
+                    )
+                ]
+                # A normal search often ranks the music video above the
+                # auto-generated catalogue entry. Run one focused follow-up
+                # search before giving up, without making the normal path
+                # slower for every request.
+                if not topic_candidates and expected_title:
+                    topic_search = f"ytsearch10:{sp_title} Topic"
+                    with yt_dlp.YoutubeDL(search_opts) as topic_search_ydl:
+                        topic_info = topic_search_ydl.extract_info(
+                            topic_search,
+                            download=False,
+                        )
+                    topic_entries = topic_info.get("entries", []) if isinstance(topic_info, dict) else []
+                    topic_entries = [
+                        item for item in topic_entries
+                        if item and (item.get("webpage_url") or item.get("url"))
+                    ]
+                    candidates.extend(topic_entries)
+                    topic_candidates = [
+                        item for item in topic_entries
+                        if re.search(
+                            r"(?:^|\s)-\s*topic\s*$|\btopic\b",
+                            " ".join(
+                                str(item.get(field) or "")
+                                for field in ("channel", "uploader", "creator", "title")
+                            ),
+                            flags=re.I,
+                        )
+                    ]
+                # Flat search entries sometimes omit uploader/channel. Probe
+                # the small targeted result set once for the missing channel
+                # metadata before declaring that no Topic result exists.
+                if not topic_candidates and expected_title:
+                    for item in candidates[:10]:
+                        item_url = item.get("webpage_url") or item.get("url")
+                        if not item_url:
+                            continue
+                        try:
+                            enriched = ydl.extract_info(item_url, download=False)
+                        except Exception:
+                            continue
+                        if re.search(
+                            r"(?:^|\s)-\s*topic\s*$|\btopic\b",
+                            " ".join(
+                                str(enriched.get(field) or "")
+                                for field in ("channel", "uploader", "creator", "title")
+                            ),
+                            flags=re.I,
+                        ):
+                            topic_candidates.append(enriched)
+                if topic_candidates:
+                    selection_pool = topic_candidates
+                    emit_progress(
+                        "ytdlp_topic_priority",
+                        30,
+                        f"Prioritizing {len(topic_candidates)} YouTube Music auto-generated Topic result(s)...",
+                    )
+                elif expected_title:
+                    raise yt_dlp.utils.DownloadError(
+                        "No YouTube Music auto-generated Topic audio result found for this Spotify track."
+                    )
                 if expected_title:
                     title_core = re.sub(r"[^\w\s]", " ", expected_title.lower())
                     title_matches = [
-                        item for item in candidates
+                        item for item in selection_pool
                         if title_core and title_core in re.sub(
                             r"[^\w\s]", " ", (item.get("title") or "").lower()
                         )
@@ -1007,7 +1349,12 @@ def download_youtube_audio(
     has_indic_script = any(bool(re.search(r'[\u0900-\u097F\u0A00-\u0A7F]', c[2])) for c in cues) if cues else False
     is_punjabi_or_hindi_requested = target_lang in ["pa", "punjabi", "panjabi", "hi", "hindi"]
 
-    if is_manual and cues:
+    if spotify_priority_cues:
+        # A direct Spotify track is authoritative for lyrics. YouTube is used
+        # only to obtain the audio matched to the Spotify metadata.
+        cues = spotify_priority_cues
+        matched_lang = spotify_priority_lang
+    elif is_manual and cues:
         # 1. Manual / Creator-uploaded subtitles found:
         # DO NOT fallback to Spotify or LRCLIB (even if in Devanagari script).
         # Directly transliterate Devanagari lyrics into Hinglish with IndicXlit.
@@ -1070,6 +1417,7 @@ def download_youtube_audio(
 
     return {
         "title": title,
+        "spotify_title": expected_title,
         "duration": duration,
         "uploader": uploader,
         "audio_path": expected_audio,
@@ -1405,6 +1753,19 @@ def get_all_film_overlays() -> List[str]:
     return []
 
 
+def get_all_film_burn_sound_effects() -> List[str]:
+    """Return sound effects reserved for the YT Hindi Film Burn intro."""
+    folder = os.path.join(os.path.dirname(__file__), "sound effect", "film burn")
+    if not os.path.exists(folder):
+        return []
+    exts = (".mp3", ".wav", ".m4a", ".aac", ".flac", ".ogg")
+    return [
+        os.path.join(folder, name)
+        for name in os.listdir(folder)
+        if name.lower().endswith(exts) and not name.startswith(".")
+    ]
+
+
 def create_header_overlay_image(
     header_text: str,
     canvas_width: int = 1080,
@@ -1587,29 +1948,78 @@ def create_intro_overlay_image(
             measured_tokens.append((t_type, t_val, color, w))
             total_w += w
 
-    start_x = max(10, (canvas_width - total_w) // 2)
-    y_pos = int((canvas_height - font_size) // 2)
+    # Keep Film Burn intro text inside the portrait-safe area. If the full
+    # header is too wide, break it at word boundaries and center the two
+    # resulting lines instead of allowing it to run off the canvas.
+    max_line_width = int(canvas_width * 0.86)
+    lines = [measured_tokens]
+    if total_w > max_line_width:
+        units = []
+        for t_type, t_val, color, _ in measured_tokens:
+            if t_type == "text":
+                for part in re.findall(r"\S+\s*|\s+", t_val):
+                    if part.isspace() and not units:
+                        continue
+                    bbox = draw.textbbox((0, 0), part, font=font)
+                    units.append((t_type, part, color, bbox[2] - bbox[0]))
+            else:
+                units.append((t_type, t_val, color, emoji_size + int(6 * scale)))
 
-    curr_x = start_x
-    for t_type, t_val, color, w in measured_tokens:
-        if t_type == "text":
-            draw.text((curr_x, y_pos), t_val, font=font, fill=color)
-            curr_x += w
+        # Choose one whitespace break near the middle, guaranteeing no more
+        # than two lines for the Film Burn intro.
+        whitespace_breaks = [
+            index for index, unit in enumerate(units)
+            if unit[0] == "text" and unit[1].isspace()
+        ]
+        if whitespace_breaks:
+            target_width = sum(unit[3] for unit in units) / 2.0
+            running_width = 0
+            break_index = whitespace_breaks[0]
+            best_distance = float("inf")
+            for index, unit in enumerate(units):
+                running_width += unit[3]
+                if index in whitespace_breaks:
+                    distance = abs(running_width - target_width)
+                    if distance < best_distance:
+                        best_distance = distance
+                        break_index = index
+            first_line = units[:break_index]
+            second_line = units[break_index + 1:]
+            while first_line and first_line[-1][0] == "text" and first_line[-1][1].isspace():
+                first_line.pop()
+            while second_line and second_line[0][0] == "text" and second_line[0][1].isspace():
+                second_line.pop(0)
+            lines = [line for line in (first_line, second_line) if line]
         else:
-            hex_code = "-".join(f"{ord(c):x}" for c in t_val if ord(c) != 0xfe0f).lower()
-            png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code}.png")
-            if not os.path.exists(png_path):
-                hex_code_single = f"{ord(t_val[0]):x}".lower()
-                png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code_single}.png")
-            if os.path.exists(png_path):
-                try:
-                    emoji_img = Image.open(png_path).convert("RGBA")
-                    emoji_img = emoji_img.resize((emoji_size, emoji_size), Image.Resampling.LANCZOS)
-                    emoji_y = y_pos - int(2 * scale)
-                    img.paste(emoji_img, (curr_x, emoji_y), emoji_img)
-                except Exception:
-                    pass
-            curr_x += w
+            lines = [units]
+
+    line_height = int(font_size * 1.25)
+    block_height = max(1, len(lines)) * line_height
+    first_y = int((canvas_height - block_height) // 2)
+
+    for line_index, line in enumerate(lines):
+        line_width = sum(item[3] for item in line)
+        curr_x = max(10, (canvas_width - line_width) // 2)
+        y_pos = first_y + line_index * line_height
+        for t_type, t_val, color, w in line:
+            if t_type == "text":
+                draw.text((curr_x, y_pos), t_val, font=font, fill=color)
+                curr_x += w
+            else:
+                hex_code = "-".join(f"{ord(c):x}" for c in t_val if ord(c) != 0xfe0f).lower()
+                png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code}.png")
+                if not os.path.exists(png_path):
+                    hex_code_single = f"{ord(t_val[0]):x}".lower()
+                    png_path = os.path.join(os.path.dirname(__file__), "emoji_assets", f"{hex_code_single}.png")
+                if os.path.exists(png_path):
+                    try:
+                        emoji_img = Image.open(png_path).convert("RGBA")
+                        emoji_img = emoji_img.resize((emoji_size, emoji_size), Image.Resampling.LANCZOS)
+                        emoji_y = y_pos - int(2 * scale)
+                        img.paste(emoji_img, (curr_x, emoji_y), emoji_img)
+                    except Exception:
+                        pass
+                curr_x += w
 
     img.save(output_png_path, "PNG")
     return output_png_path
@@ -1976,6 +2386,21 @@ def get_audio_duration(audio_path: str) -> float:
         return 180.0
 
 
+def get_video_duration(video_path: str) -> float:
+    """Return a background clip's duration, or 0 when it cannot be probed."""
+    cmd = [
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    try:
+        probe = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+        return max(0.0, float(probe.stdout.strip()))
+    except Exception:
+        return 0.0
+
+
 def get_pillow_font(font_name: str, size: int):
     font_lower = (font_name or "").lower()
     candidates = []
@@ -2302,8 +2727,12 @@ def render_yt_hindi_video_ffmpeg(
     end_seconds: Optional[float] = None,
     cues: Optional[List[Any]] = None,
     film_burn_intro: bool = False,
+    film_burn_preroll_seconds: float = 0.0,
+    film_burn_intro_seconds: float = 0.0,
     intro_header: Optional[str] = None,
     song_title: str = "",
+    orig_first_cue_start: float = 0.0,
+    orig_second_cue_start: float = 0.0,
 ) -> str:
     """
     Renders complete YT Hindi Type video where:
@@ -2320,8 +2749,10 @@ def render_yt_hindi_video_ffmpeg(
     res_w = 540 if is_fast else 1080
     res_h = 960 if is_fast else 1920
     fps = 24 if is_fast else 30
+    # YT Hindi uses a square real-video window inside the portrait canvas.
+    # Final mode: 1080x1080; fast preview: 540x540.
     rect_w = res_w
-    rect_h = int(res_w * 720 / 1080)
+    rect_h = res_w
     top_margin = (res_h - rect_h) // 2
 
     temp_dir = os.path.dirname(output_path) or "."
@@ -2340,17 +2771,60 @@ def render_yt_hindi_video_ffmpeg(
 
     intro_png = None
     chosen_overlay_video = None
+    chosen_film_burn_sound = None
     first_start = cues[0]["timeSeconds"] if cues and len(cues) > 0 and isinstance(cues[0], dict) else (cues[0][0] if cues and len(cues) > 0 else 0.0)
     audio_delay = 0.0
     burn_dur = 3.0
     if film_burn_intro:
-        # If lyrics start early (< 2.5s), we provide a 3.0s intro and delay the audio so vocals and lyrics are 100% in sync!
-        if first_start < 2.5:
+        # The trim stage explicitly supplies the desired intro duration.
+        # When its audio pre-roll fully covers that duration, the song starts
+        # at t=0; otherwise retain a timing delay for lyric synchronization.
+        if film_burn_intro_seconds > 0.001:
+            burn_dur = film_burn_intro_seconds
+            has_full_preroll = film_burn_preroll_seconds >= burn_dur - 0.01
+            audio_delay = 0.0 if has_full_preroll else max(0.0, burn_dur - first_start)
+        elif cues and len(cues) >= 2:
+            c0_s = float(cues[0]["timeSeconds"] if isinstance(cues[0], dict) else cues[0][0])
+            c1_s = float(cues[1]["timeSeconds"] if isinstance(cues[1], dict) else cues[1][0])
+            first_line_dur = c1_s - c0_s
+            c0_e = float(cues[0]["endSeconds"] if isinstance(cues[0], dict) else cues[0][1])
+            burn_dur = first_line_dur if first_line_dur > 0.001 else max(0.5, c0_e - c0_s)
+            has_full_preroll = film_burn_preroll_seconds >= burn_dur - 0.01
+            audio_delay = 0.0 if has_full_preroll else max(0.0, burn_dur - first_start)
+        elif first_start < 2.5:
             burn_dur = 3.0
             audio_delay = 3.0 - first_start
         else:
             burn_dur = first_start
             audio_delay = 0.0
+
+        first_text = ""
+        if cues:
+            first_item = cues[0]
+            first_text = first_item.get("text", "") if isinstance(first_item, dict) else str(first_item[2])
+
+        c0_log = orig_first_cue_start if (orig_first_cue_start > 0.001 or orig_second_cue_start > 0.001) else (float(cues[0]["timeSeconds"]) if cues and isinstance(cues[0], dict) else (float(cues[0][0]) if cues else 0.0))
+        c1_log = orig_second_cue_start if (orig_first_cue_start > 0.001 or orig_second_cue_start > 0.001) else (float(cues[1]["timeSeconds"]) if cues and len(cues) > 1 and isinstance(cues[1], dict) else (float(cues[1][0]) if cues and len(cues) > 1 else 0.0))
+        opening_window_log = film_burn_intro_seconds if film_burn_intro_seconds > 0.001 else burn_dur
+
+        print(
+            f"[Film Burn Pre-Render Verification]\n"
+            f"  original first cue start:    {c0_log:.3f}s\n"
+            f"  original second cue start:   {c1_log:.3f}s\n"
+            f"  calculated opening window:   {opening_window_log:.3f}s\n"
+            f"  film_burn_intro_seconds:     {film_burn_intro_seconds:.3f}s\n"
+            f"  film_burn_preroll_seconds:   {film_burn_preroll_seconds:.3f}s\n"
+            f"  final burn_dur:              {burn_dur:.3f}s\n"
+            f"  audio delay:                 {audio_delay:.3f}s",
+            flush=True
+        )
+
+        emit_progress(
+            "film_burn_timeline",
+            73,
+            f"Film Burn: intro={burn_dur:.2f}s, pre-roll={film_burn_preroll_seconds:.2f}s, "
+            f"audio delay={audio_delay:.2f}s, first lyric='{first_text[:48]}'",
+        )
 
         intro_text = get_intro_header_text(intro_header, song_title=song_title, duration=duration or 0.0)
         intro_png = os.path.join(temp_dir, f"intro_{int(time.time()*1000)}.png")
@@ -2364,6 +2838,10 @@ def render_yt_hindi_video_ffmpeg(
         if overlay_pool:
             chosen_overlay_video = random.choice(overlay_pool)
             print(f"[YT Hindi Intro] Selected film overlay video: {os.path.basename(chosen_overlay_video)} (burn_dur={burn_dur:.2f}s, audio_delay={audio_delay:.2f}s)")
+        sound_pool = get_all_film_burn_sound_effects()
+        if sound_pool:
+            chosen_film_burn_sound = random.choice(sound_pool)
+            print(f"[YT Hindi Intro] Selected sound effect: {os.path.basename(chosen_film_burn_sound)}")
 
     encoder_name, encoder_flags = detect_fastest_h264_encoder()
     if is_fast:
@@ -2393,12 +2871,19 @@ def render_yt_hindi_video_ffmpeg(
             timeline_segments.append((0.0, burn_dur, "", intro_fade_st, min(transition_seconds, burn_dur - intro_fade_st)))
             effective_total_dur = duration + audio_delay
 
-            for idx, item in enumerate(cues):
-                s_t = (item["timeSeconds"] if isinstance(item, dict) else item[0]) + audio_delay
-                e_t = (item["endSeconds"] if isinstance(item, dict) else item[1]) + audio_delay
+            # The intro covers the first complete lyric line. Begin the
+            # visible lyric sequence with the second cue, so an opening like
+            # 00:00.00 -> 00:04.59 renders:
+            # intro covering line 1 -> line 2 -> line 3 -> ...
+            visible_cues = cues[1:]
+            for idx, item in enumerate(visible_cues):
+                source_start = float(item["timeSeconds"] if isinstance(item, dict) else item[0])
+                source_end = float(item["endSeconds"] if isinstance(item, dict) else item[1])
+                s_t = burn_dur if idx == 0 else source_start + audio_delay
+                e_t = source_end + audio_delay
                 txt = item.get("text", "") if isinstance(item, dict) else (item[2] if len(item) > 2 else "")
-                if idx + 1 < len(cues):
-                    next_start = (cues[idx + 1]["timeSeconds"] if isinstance(cues[idx + 1], dict) else cues[idx + 1][0]) + audio_delay
+                if idx + 1 < len(visible_cues):
+                    next_start = (visible_cues[idx + 1]["timeSeconds"] if isinstance(visible_cues[idx + 1], dict) else visible_cues[idx + 1][0]) + audio_delay
                     seg_end = next_start
                 else:
                     seg_end = effective_total_dur
@@ -2454,9 +2939,15 @@ def render_yt_hindi_video_ffmpeg(
         # If film_burn_intro, segment 0 is a pure black plain with NO background video
         clips_needed = (num_segments - 1) if (film_burn_intro and num_segments > 1) else num_segments
         selected_clips = []
+        selected_clip_loops = []
+        clip_durations = {path: get_video_duration(path) for path in all_bg_videos}
         last_clip = None
         shuffled_pool = []
-        for _ in range(max(1, clips_needed)):
+        segment_durations = [
+            seg_dur for index, (_, seg_dur, *_rest) in enumerate(timeline_segments)
+            if not (film_burn_intro and index == 0)
+        ]
+        for segment_dur in segment_durations[:max(1, clips_needed)]:
             if not shuffled_pool:
                 shuffled_pool = list(all_bg_videos)
                 random.shuffle(shuffled_pool)
@@ -2465,8 +2956,20 @@ def render_yt_hindi_video_ffmpeg(
                     shuffled_pool[-1], shuffled_pool[swap_index] = (
                         shuffled_pool[swap_index], shuffled_pool[-1]
                     )
-            chosen = shuffled_pool.pop()
+            long_enough = [
+                path for path in shuffled_pool
+                if clip_durations.get(path, 0.0) >= segment_dur
+            ]
+            if not long_enough:
+                raise RuntimeError(
+                    "YT Hindi background video is too short for a lyric segment "
+                    f"({segment_dur:.2f}s). Add a longer video to videos/input/ "
+                    "or remove short background clips. Generation stopped without looping."
+                )
+            chosen = random.choice(long_enough)
+            shuffled_pool.remove(chosen)
             selected_clips.append(chosen)
+            selected_clip_loops.append(False)
             last_clip = chosen
 
         print(f"[YT Hindi] Merging {num_segments} segments ({clips_needed} video clips, intro on black plain={film_burn_intro})")
@@ -2488,8 +2991,10 @@ def render_yt_hindi_video_ffmpeg(
             lyric_png_paths.append(png_path)
 
         video_inputs = []
-        for clip_path in selected_clips:
-            video_inputs.extend(["-stream_loop", "-1", "-i", clip_path])
+        for clip_path, should_loop in zip(selected_clips, selected_clip_loops):
+            if should_loop:
+                video_inputs.extend(["-stream_loop", "-1"])
+            video_inputs.extend(["-i", clip_path])
 
         png_inputs = []
         for p in lyric_png_paths:
@@ -2571,7 +3076,7 @@ def render_yt_hindi_video_ffmpeg(
             )
             # Overlay intro text strictly during intro window. No top header is added.
             filter_parts.append(
-                f"{base_layer}[intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[v_out]"
+                f"{base_layer}[intro_txt]overlay=0:0:enable='between(t,0,{burn_dur:.3f})'[v_out];"
             )
 
             extra_image_inputs = extra_inputs
@@ -2581,14 +3086,47 @@ def render_yt_hindi_video_ffmpeg(
             filter_parts.append(f"[canvas][{hdr_idx}:v]overlay=0:0[v_out]")
             extra_image_inputs = ["-i", header_png]
 
-        # Handle synchronized audio delay if intro was inserted
+        # Film Burn audio is deliberately split at the intro boundary. The
+        # intro slice ramps from 20% to 100%; the remaining song is untouched
+        # at full volume. This prevents an expression from leaking past the
+        # intro or being masked by later audio processing.
+        extra_audio_inputs = []
+        if film_burn_intro and intro_png:
+            music_source = f"[{audio_idx}:a]"
+            if audio_delay > 0.001:
+                audio_delay_ms = int(round(audio_delay * 1000))
+                filter_parts.append(
+                    f"[{audio_idx}:a]adelay={audio_delay_ms}|{audio_delay_ms}[a_timed];"
+                )
+                music_source = "[a_timed]"
+            filter_parts.append(
+                f"{music_source}asplit=2[a_intro_source][a_main_source];"
+                f"[a_intro_source]atrim=0:{burn_dur:.3f},asetpts=PTS-STARTPTS,"
+                f"afade=t=in:st=0:d={burn_dur:.3f}:curve=tri:silence=0.2:unity=1[a_intro_music];"
+                f"[a_main_source]atrim=start={burn_dur:.3f},asetpts=PTS-STARTPTS[a_main_music];"
+                f"[a_intro_music][a_main_music]concat=n=2:v=0:a=1[a_music_fade];"
+            )
+            if chosen_film_burn_sound:
+                sfx_idx = audio_idx + 1
+                extra_audio_inputs = ["-i", chosen_film_burn_sound]
+                filter_parts.append(
+                    f"[{sfx_idx}:a]atrim=0:{burn_dur:.3f},asetpts=PTS-STARTPTS,"
+                    f"volume=0.35[sfx_intro];"
+                    f"[a_music_fade][sfx_intro]amix=inputs=2:duration=first:"
+                    f"dropout_transition=0:normalize=0[a_film_mix];"
+                )
+                audio_map_out = "[a_film_mix]"
+            else:
+                audio_map_out = "[a_music_fade]"
+        else:
+            audio_map_out = f"{audio_idx}:a"
+
+        # Handle any legacy synchronized audio delay if it is ever supplied.
         final_render_duration = duration + audio_delay
-        if audio_delay > 0.001:
+        if audio_delay > 0.001 and not (film_burn_intro and intro_png):
             audio_delay_ms = int(round(audio_delay * 1000))
             filter_parts.append(f";[{audio_idx}:a]adelay={audio_delay_ms}|{audio_delay_ms},apad[a_synced]")
             audio_map_out = "[a_synced]"
-        else:
-            audio_map_out = f"{audio_idx}:a"
 
         filter_complex = "".join(filter_parts)
 
@@ -2598,6 +3136,7 @@ def render_yt_hindi_video_ffmpeg(
             png_inputs +
             extra_image_inputs +
             ["-i", audio_path] +
+            extra_audio_inputs +
             ["-filter_complex", filter_complex] +
             ["-map", "[v_out]", "-map", audio_map_out] +
             ["-t", f"{final_render_duration:.2f}", "-r", str(fps), "-c:v", encoder_name] +
@@ -2674,12 +3213,13 @@ def format_master_header_title(song_title: str) -> str:
     return f'"{clean.upper()}" LYRICS'
 
 
-def get_english_generic_background() -> Tuple[str, bool]:
+def get_master_lyrics_background(variant: str = "default") -> Tuple[str, bool]:
     """
-    Returns (path, is_video) for media in videos/input/English generic/.
+    Returns (path, is_video) for media in the selected Master Lyrics variant.
     Supports images (.jpg, .jpeg, .png, .webp) and video files (.mp4, .mov, .mkv).
     """
-    base_dir = os.path.join(os.path.dirname(__file__), "videos", "input", "English generic")
+    folder_name = "zmusic" if (variant or "").lower() == "zmusic" else "default"
+    base_dir = os.path.join(os.path.dirname(__file__), "videos", "input", "Wholelyrics", folder_name)
     if os.path.exists(base_dir):
         files = [os.path.join(base_dir, f) for f in os.listdir(base_dir) if not f.startswith(".")]
         v_exts = (".mp4", ".mov", ".mkv", ".webm")
@@ -2691,11 +3231,11 @@ def get_english_generic_background() -> Tuple[str, bool]:
         elif videos:
             return random.choice(videos), True
 
-    # Fallback to images.jpg if present
-    img_fallback = os.path.join(os.path.dirname(__file__), "videos", "input", "English generic", "images.jpg")
-    if os.path.exists(img_fallback):
-        return img_fallback, False
     return "", False
+
+
+# Backward-compatible alias for any external callers.
+get_english_generic_background = get_master_lyrics_background
 
 
 def render_master_lyric_video_ffmpeg(
@@ -2706,20 +3246,21 @@ def render_master_lyric_video_ffmpeg(
     song_title: Optional[str] = None,
     preview_quality: str = "final",
     start_seconds: float = 0.0,
-    end_seconds: Optional[float] = None
+    end_seconds: Optional[float] = None,
+    variant: str = "default"
 ) -> str:
     """
     Renders video adhering strictly to MASTER LYRIC TEMPLATE SPECIFICATION:
     - Canvas: 9:16 Vertical (1080 x 1920 pixels), 24 fps
     - Background: Media from videos/input/English generic/ (100% Opacity, NO dark overlay or tint)
-    - Header Title: "SONG NAME" LYRICS in bold serif, centered at (X: 540, Y: 180), #000000 solid black
-    - Lyrics Container: Centered vertically at Y: 960px, max width 920px (margin 80px left/right)
-    - Line Spacing: 1.6x Line Height, Base font EB Garamond 44px
+    - Header: None
+    - Lyrics: Bold Arial, black, left-aligned from the upper-left
+    - Segment: All supplied lyric lines remain visible together
+    - Line Spacing: 1.6x Line Height, Base font Arial Bold 44px
     - Dynamic Line State Machine:
-      * Inactive State: #000000 (solid black), transparent background, normal weight (400)
-      * Active State: #FFFFFF (solid white), bold (700)/scale 1.03, inside a rounded pill
-        (#000000 / #111111 85% opacity, padding 12px top/bottom, 24px left/right, border radius 12px)
-      * Post-Active Reset: Immediately reverts to #000000, removes pill, resets to normal weight
+      * Inactive State: black at reduced opacity
+      * Active State: solid black at full opacity, with no pill/background
+      * Post-Active Reset: Immediately returns to reduced-opacity black
     """
     res_w = 1080
     res_h = 1920
@@ -2733,17 +3274,18 @@ def render_master_lyric_video_ffmpeg(
 
     emit_progress("ffmpeg_start", 75, f"Step 3: Rendering Master Lyric {res_w}x{res_h} {fps}fps Video using {encoder_name} ({duration:.1f}s)...")
 
-    # Fonts
-    # Header: Bold Serif (Georgia Bold / Times New Roman Bold)
-    h_font_path = "C:/Windows/Fonts/georgiab.ttf" if os.path.exists("C:/Windows/Fonts/georgiab.ttf") else ("C:/Windows/Fonts/timesbd.ttf" if os.path.exists("C:/Windows/Fonts/timesbd.ttf") else "fonts/EBGaramond-Variable.ttf")
-    header_font = ImageFont.truetype(h_font_path, 68)
-
-    # Lyrics: EB Garamond (Medium Serif)
-    l_font_path = "fonts/EBGaramond-Variable.ttf" if os.path.exists("fonts/EBGaramond-Variable.ttf") else "C:/Windows/Fonts/georgia.ttf"
-    lyrics_font_normal = ImageFont.truetype(l_font_path, 44)
-    lyrics_font_active = ImageFont.truetype(l_font_path, int(round(44 * 1.03)))
-
-    header_text = format_master_header_title(song_title or "SONG")
+    # Master Lyrics uses bold Arial for every lyric state and has no header.
+    is_zmusic = (variant or "").lower() == "zmusic"
+    if is_zmusic:
+        l_font_path = "fonts/Roboto-Bold.ttf" if os.path.exists("fonts/Roboto-Bold.ttf") else (
+            "C:/Windows/Fonts/Roboto-Bold.ttf" if os.path.exists("C:/Windows/Fonts/Roboto-Bold.ttf") else "C:/Windows/Fonts/arialbd.ttf"
+        )
+        lyrics_font_normal = ImageFont.truetype(l_font_path, 56)
+        lyrics_font_active = ImageFont.truetype(l_font_path, 56)
+    else:
+        l_font_path = "C:/Windows/Fonts/arialbd.ttf" if os.path.exists("C:/Windows/Fonts/arialbd.ttf") else "C:/Windows/Fonts/calibrib.ttf"
+        lyrics_font_normal = ImageFont.truetype(l_font_path, 44)
+        lyrics_font_active = ImageFont.truetype(l_font_path, 44)
 
     # Parse cues into structured list [(start_t, end_t, text)]
     parsed_cues = []
@@ -2790,7 +3332,15 @@ def render_master_lyric_video_ffmpeg(
 
         intervals.append((t_start, t_end, seg_d, active_idx))
 
-    temp_dir = os.path.join(os.path.dirname(output_path), f"temp_master_{int(time.time()*1000)}")
+    output_dir = os.path.dirname(output_path) or "."
+    # Remove abandoned state folders from interrupted previous Master runs.
+    # The prefix is intentionally narrow so final videos and other temp files
+    # are never touched.
+    for stale_dir in glob.glob(os.path.join(output_dir, "temp_master_*")):
+        if os.path.isdir(stale_dir):
+            shutil.rmtree(stale_dir, ignore_errors=True)
+
+    temp_dir = os.path.join(output_dir, f"temp_master_{int(time.time()*1000)}")
     os.makedirs(temp_dir, exist_ok=True)
 
     def wrap_words(txt: str, fnt: ImageFont.ImageFont, max_w: int = 920) -> List[str]:
@@ -2818,74 +3368,86 @@ def render_master_lyric_video_ffmpeg(
     # Render unique state PNGs
     state_to_filename = {}
     concat_entries = []
-    line_h = int(round(44 * 1.6)) # 70px
+    line_h = int(round((56 if is_zmusic else 44) * 1.6))
+    max_lyric_height = int(res_h * 0.65)
+
+    # Split long requested segments into readable mini-sections. A section
+    # never occupies more than 65% of the canvas height.
+    lyric_pages = []
+    current_page = []
+    current_height = 0
+    for cue_index, (_, _, lyric_text) in enumerate(parsed_cues):
+        lyric_font = lyrics_font_normal
+        wrapped_lines = wrap_words(lyric_text, lyric_font, max_w=840) or [lyric_text]
+        cue_height = len(wrapped_lines) * line_h
+        if current_page and current_height + cue_height > max_lyric_height:
+            lyric_pages.append(current_page)
+            current_page = []
+            current_height = 0
+        current_page.append(cue_index)
+        current_height += cue_height
+    if current_page:
+        lyric_pages.append(current_page)
 
     try:
         for t_start, t_end, seg_d, active_idx in intervals:
-            # Determine visible line window centered on active or next line
-            if active_idx != -1:
-                center_idx = active_idx
-            else:
-                # Find next upcoming line
-                center_idx = 0
-                for c_idx, (st, _, _) in enumerate(parsed_cues):
-                    if st >= t_start:
-                        center_idx = c_idx
+            # Keep the complete current mini-section on screen. Sections are
+            # selected by the active lyric and advance without scrolling.
+            page_index = 0
+            if active_idx >= 0:
+                for idx, page in enumerate(lyric_pages):
+                    if active_idx in page:
+                        page_index = idx
                         break
-
-            start_w = max(0, min(center_idx - 2, max(0, len(parsed_cues) - 5)))
-            end_w = min(len(parsed_cues), start_w + 5)
-            visible_slice = list(range(start_w, end_w))
+            elif lyric_pages:
+                next_index = next(
+                    (cue_index for cue_index, (cue_start, _, _) in enumerate(parsed_cues) if cue_start >= t_start),
+                    lyric_pages[0][0],
+                )
+                for idx, page in enumerate(lyric_pages):
+                    if next_index in page:
+                        page_index = idx
+                        break
+            visible_slice = lyric_pages[page_index] if lyric_pages else []
 
             state_key = (active_idx, tuple(visible_slice))
             if state_key not in state_to_filename:
                 img = Image.new("RGBA", (res_w, res_h), (0, 0, 0, 0))
                 draw = ImageDraw.Draw(img)
 
-                # 1. Header: "SONG NAME" LYRICS at (X: 540, Y: 180)
-                hb = draw.textbbox((0, 0), header_text, font=header_font)
-                hw, hh = hb[2] - hb[0], hb[3] - hb[1]
-                draw.text(((res_w - hw) / 2, 180 - (hh / 2)), header_text, font=header_font, fill=(0, 0, 0, 255))
-
-                # 2. Compute heights of visible lines (handling wrapping)
+                # Compute heights of every line in the requested segment.
                 block_lines = []
                 total_content_height = 0
                 for v_idx in visible_slice:
                     l_text = parsed_cues[v_idx][2]
                     is_active = (v_idx == active_idx)
                     cur_font = lyrics_font_active if is_active else lyrics_font_normal
-                    wrapped = wrap_words(l_text, cur_font, max_w=920) or [l_text]
+                    wrapped = wrap_words(l_text, cur_font, max_w=840) or [l_text]
                     l_block_height = len(wrapped) * line_h
                     block_lines.append((v_idx, is_active, wrapped, cur_font, l_block_height))
                     total_content_height += l_block_height
 
-                # Center container at Y: 960px
-                cur_y = 960 - (total_content_height // 2)
+                # Position the complete segment from the upper-left.
+                cur_y = 140
 
                 for v_idx, is_active, wrapped, cur_font, l_block_height in block_lines:
                     for sub_idx, sub_text in enumerate(wrapped):
                         sbbox = draw.textbbox((0, 0), sub_text, font=cur_font)
                         sw, sh = sbbox[2] - sbbox[0], sbbox[3] - sbbox[1]
                         line_center_y = cur_y + (sub_idx * line_h) + (line_h // 2)
-                        sx = (res_w - sw) / 2
+                        sx = 120
                         sy = line_center_y - (sh / 2)
 
-                        if is_active:
-                            pad_x = 24
-                            pad_y = 12
-                            pill_x1 = sx - pad_x
-                            pill_y1 = sy - pad_y
-                            pill_x2 = sx + sw + pad_x
-                            pill_y2 = sy + sh + pad_y
-
-                            draw.rounded_rectangle(
-                                [pill_x1, pill_y1, pill_x2, pill_y2],
-                                radius=12,
-                                fill=(17, 17, 17, int(round(255 * 0.85))) # #111111 with 85% opacity
-                            )
-                            draw.text((sx, sy), sub_text, font=cur_font, fill=(255, 255, 255, 255))
+                        # Navigation is conveyed by opacity only: the active
+                        # line is solid black, while all other lines remain
+                        # black at reduced opacity. No pill or background shape.
+                        if is_zmusic:
+                            text_fill = (255, 255, 255, 255) if is_active else (0, 0, 0, 255)
+                            if is_active:
+                                draw.text((sx + 3, sy + 3), sub_text, font=cur_font, fill=(0, 0, 0, 150))
                         else:
-                            draw.text((sx, sy), sub_text, font=cur_font, fill=(0, 0, 0, 255))
+                            text_fill = (0, 0, 0, 255 if is_active else 105)
+                        draw.text((sx, sy), sub_text, font=cur_font, fill=text_fill)
 
                     cur_y += l_block_height
 
@@ -2904,7 +3466,7 @@ def render_master_lyric_video_ffmpeg(
                 cf.write(f"file '{concat_entries[-1][0]}'\n")
 
         # Discover background media from videos/input/English generic/
-        bg_media_path, is_bg_video = get_english_generic_background()
+        bg_media_path, is_bg_video = get_master_lyrics_background(variant)
         print(f"[Master Lyric] Background source: '{bg_media_path}' (is_video={is_bg_video})")
 
         inputs = []
@@ -2978,9 +3540,13 @@ def generate_lyric_video(
     cues_file: Optional[str] = None,
     top_header: Optional[str] = None,
     preview_quality: str = "final",
-    intro_header: Optional[str] = None
+    intro_header: Optional[str] = None,
+    master_variant: str = "default",
+    yt_hindi_variant: str = "standard"
 ) -> Dict[str, Any]:
     """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type), Fonts, Languages, and Interactive Placement."""
+    generation_started_at = time.perf_counter()
+    generation_cpu_started_at = time.process_time()
     tpl_id = (template or "").lower().strip()
     is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
@@ -3066,27 +3632,116 @@ def generate_lyric_video(
     requested_end = float(end_seconds) if end_seconds is not None else None
     test_start = requested_start
     test_end = min(duration, requested_end if requested_end is not None else duration)
+    is_film_burn_render = is_yt_hindi and (
+        tpl_id == "yt_hindi_intro" or yt_hindi_variant == "film_burn"
+    )
+    film_burn_preroll_seconds = 0.0
+    film_burn_intro_seconds = 0.0
+    orig_first_cue_start = 0.0
+    orig_second_cue_start = 0.0
+    calculated_opening_window = 0.0
+
+    def _extract_cue_timing(c):
+        if isinstance(c, dict):
+            s = float(c.get("timeSeconds", 0.0))
+            e = float(c.get("endSeconds", s + 2.5))
+            txt = str(c.get("text", ""))
+        elif isinstance(c, (list, tuple)) and len(c) >= 3:
+            s = float(c[0])
+            e = float(c[1])
+            txt = str(c[2])
+        elif isinstance(c, (list, tuple)) and len(c) == 2:
+            s = float(c[0])
+            e = float(c[1])
+            txt = ""
+        else:
+            s = 0.0
+            e = 2.5
+            txt = ""
+        return s, e, txt
+
+    raw_cues = yt_data.get("cues", [])
+    if test_start > 0.0 or (requested_end is not None and test_end < duration):
+        selected_cues = [
+            c for c in raw_cues
+            if _extract_cue_timing(c)[1] > test_start and _extract_cue_timing(c)[0] < test_end
+        ]
+    else:
+        selected_cues = list(raw_cues)
+    if not selected_cues and raw_cues:
+        selected_cues = list(raw_cues)
+
+    if is_film_burn_render:
+        if len(selected_cues) >= 2:
+            first_cue = selected_cues[0]
+            second_cue = selected_cues[1]
+            s0, e0, _ = _extract_cue_timing(first_cue)
+            s1, e1, _ = _extract_cue_timing(second_cue)
+            orig_first_cue_start = s0
+            orig_second_cue_start = s1
+            first_line_duration = s1 - s0
+            if first_line_duration > 0.001:
+                calculated_opening_window = first_line_duration
+            else:
+                calculated_opening_window = max(0.5, e0 - s0)
+        elif len(selected_cues) == 1:
+            first_cue = selected_cues[0]
+            s0, e0, _ = _extract_cue_timing(first_cue)
+            orig_first_cue_start = s0
+            orig_second_cue_start = e0
+            calculated_opening_window = max(0.5, e0 - s0)
+        else:
+            calculated_opening_window = 3.0
+
+        film_burn_intro_seconds = calculated_opening_window
+        film_burn_preroll_seconds = min(film_burn_intro_seconds, test_start)
+
+        print(
+            f"[Film Burn Pre-Calculation]\n"
+            f"  original first cue start:    {orig_first_cue_start:.3f}s\n"
+            f"  original second cue start:   {orig_second_cue_start:.3f}s\n"
+            f"  calculated opening window:   {calculated_opening_window:.3f}s\n"
+            f"  film_burn_intro_seconds:     {film_burn_intro_seconds:.3f}s\n"
+            f"  film_burn_preroll_seconds:   {film_burn_preroll_seconds:.3f}s",
+            flush=True
+        )
+
     if test_start > 0.0 or (requested_end is not None and test_end < duration):
         if test_end <= test_start:
             test_end = duration
         trim_dur = max(0.5, test_end - test_start)
+        audio_preroll = min(film_burn_intro_seconds, test_start) if is_film_burn_render else 0.0
+        film_burn_preroll_seconds = audio_preroll
+        audio_trim_start = max(0.0, test_start - audio_preroll)
+        audio_trim_duration = trim_dur + audio_preroll
         trimmed_audio = temp_audio_path.replace(".mp3", f"_trimmed_{int(test_start)}_{int(test_end)}.mp3")
-        subprocess.run([
-            "ffmpeg", "-y", "-ss", f"{test_start:.3f}", "-t", f"{trim_dur:.3f}",
+        trim_result = subprocess.run([
+            "ffmpeg", "-y", "-ss", f"{audio_trim_start:.3f}", "-t", f"{audio_trim_duration:.3f}",
             "-i", audio_path, "-c:a", "libmp3lame", "-b:a", "192k", trimmed_audio
-        ], capture_output=True)
-        if os.path.exists(trimmed_audio):
-            audio_path = trimmed_audio
+        ], capture_output=True, text=True)
+        if trim_result.returncode != 0 or not os.path.exists(trimmed_audio):
+            detail = (trim_result.stderr or "FFmpeg did not create the trimmed audio file.").strip()
+            raise RuntimeError(f"Could not prepare the requested audio segment: {detail[-600:]}")
+        audio_path = trimmed_audio
         
         # Shift and filter cues
         original_cues = yt_data["cues"]
         yt_data["cues"] = [
-            (max(0.0, s - test_start), min(trim_dur, e - test_start), text)
-            for s, e, text in original_cues
-            if e > test_start and s < test_end
+            (
+                max(0.0, _extract_cue_timing(c)[0] - test_start + audio_preroll),
+                min(trim_dur + audio_preroll, _extract_cue_timing(c)[1] - test_start + audio_preroll),
+                _extract_cue_timing(c)[2],
+            )
+            for c in original_cues
+            if _extract_cue_timing(c)[1] > test_start and _extract_cue_timing(c)[0] < test_end
         ]
-        duration = trim_dur
-        emit_progress("test_range", 55, f"Rendering test window: {test_start:.1f}s to {test_end:.1f}s ({duration:.1f}s total)...")
+        duration = trim_dur + audio_preroll
+        emit_progress(
+            "test_range",
+            55,
+            f"Rendering test window: {test_start:.1f}s to {test_end:.1f}s "
+            f"with {audio_preroll:.1f}s Film Burn audio pre-roll ({duration:.1f}s total)...",
+        )
 
     ass_path, structured_lines, raw_lrc = build_ass_and_lrc_content(
         cues=yt_data["cues"],
@@ -3105,8 +3760,15 @@ def generate_lyric_video(
         spacing=spacing,
         word_spacing=word_spacing
     )
+    render_started_at = time.perf_counter()
 
     if is_yt_hindi:
+        is_spotify_input = "spotify.com/track/" in song_query or song_query.startswith("spotify:track:")
+        intro_song_title = (
+            yt_data.get("spotify_title")
+            if is_spotify_input
+            else (yt_data.get("title") or song_query)
+        )
         render_yt_hindi_video_ffmpeg(
             audio_path=audio_path,
             ass_path=ass_path,
@@ -3117,9 +3779,13 @@ def generate_lyric_video(
             start_seconds=test_start,
             end_seconds=test_end,
             cues=structured_lines,
-            film_burn_intro=(tpl_id == "yt_hindi_intro"),
+            film_burn_intro=(tpl_id == "yt_hindi_intro" or (tpl_id == "yt_hindi_type" and yt_hindi_variant == "film_burn")),
+            film_burn_preroll_seconds=film_burn_preroll_seconds,
+            film_burn_intro_seconds=film_burn_intro_seconds,
             intro_header=intro_header,
-            song_title=yt_data.get("title") or song_query
+            song_title=intro_song_title or "This Song",
+            orig_first_cue_start=orig_first_cue_start,
+            orig_second_cue_start=orig_second_cue_start,
         )
 
     elif tpl_id == "master_lyrics":
@@ -3131,7 +3797,8 @@ def generate_lyric_video(
             song_title=yt_data.get("title") or song_query,
             preview_quality=preview_quality,
             start_seconds=test_start,
-            end_seconds=test_end
+            end_seconds=test_end,
+            variant=master_variant
         )
 
     elif clean_base:
@@ -3206,6 +3873,18 @@ def generate_lyric_video(
         "rawLrc": raw_lrc
     }
 
+    is_portrait_output = effective_aspect.lower() == "portrait" or effective_aspect == "9:16"
+    final_result["metrics"] = build_generation_metrics(
+        started_at=generation_started_at,
+        cpu_started_at=generation_cpu_started_at,
+        render_started_at=render_started_at,
+        output_path=output_path,
+        video_duration=duration,
+        encoder_name=(_CACHED_ENCODER[0] if _CACHED_ENCODER else "unknown"),
+        resolution="1080x1920" if is_portrait_output else "1920x1080",
+        fps=24 if preview_quality == "fast" else 30,
+    )
+
     # Automatically clean up temporary trimmed audio files
     if trimmed_audio and os.path.exists(trimmed_audio):
         try:
@@ -3243,6 +3922,8 @@ if __name__ == "__main__":
     top_header = None
     intro_header = None
     preview_quality = "final"
+    master_variant = "default"
+    yt_hindi_variant = "standard"
 
     for a in sys.argv[1:]:
         if a.startswith("--offset="):
@@ -3314,6 +3995,10 @@ if __name__ == "__main__":
             intro_header = a.split("=")[1].strip()
         elif a.startswith("--preview-quality="):
             preview_quality = a.split("=")[1].strip()
+        elif a.startswith("--master-variant="):
+            master_variant = a.split("=", 1)[1].strip().lower()
+        elif a.startswith("--yt-hindi-variant="):
+            yt_hindi_variant = a.split("=", 1)[1].strip().lower()
 
     res = generate_lyric_video(
         song_query=query,
@@ -3338,7 +4023,9 @@ if __name__ == "__main__":
         cues_file=cues_file,
         top_header=top_header,
         preview_quality=preview_quality,
-        intro_header=intro_header
+        intro_header=intro_header,
+        master_variant=master_variant,
+        yt_hindi_variant=yt_hindi_variant
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)

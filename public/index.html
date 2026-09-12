@@ -35,7 +35,7 @@
             type="text"
             id="song-query-input"
             class="command-input"
-            placeholder="Enter song name or paste YouTube URL (e.g. The Weeknd - Blinding Lights)"
+            placeholder="Paste a Spotify track link"
             value="The Weeknd - Blinding Lights"
             autocomplete="off"
             required
@@ -84,6 +84,22 @@
               <span class="template-desc">📜 9:16 Master Lyric (Aesthetic Card)</span>
             </button>
           </div>
+        </div>
+
+        <div class="control-row" id="master-lyrics-variant-row" style="display: none;">
+          <span class="control-label">🎼 Master Variation:</span>
+          <select id="master-lyrics-variant-select" class="custom-studio-input" style="max-width: 260px;">
+            <option value="default">Current</option>
+            <option value="zmusic">Z Music</option>
+          </select>
+        </div>
+
+        <div class="control-row" id="yt-hindi-variant-row" style="display: none;">
+          <span class="control-label">🎬 YT Hindi Variation:</span>
+          <select id="yt-hindi-variant-select" class="custom-studio-input" style="max-width: 260px;">
+            <option value="standard">Standard</option>
+            <option value="film_burn">Film Burn</option>
+          </select>
         </div>
 
         <!-- Brat Aesthetic Palette & Live Reflow Sandbox (Appears for Brat Template) -->
@@ -340,6 +356,17 @@
           <!-- Live log lines -->
         </div>
       </div>
+
+      <section id="generation-metrics" class="generation-metrics" hidden>
+        <div class="metrics-header">
+          <div>
+            <span class="step-label">Render diagnostics</span>
+            <h4>Optimization Metrics</h4>
+          </div>
+          <span class="metrics-note">Measured for this generation</span>
+        </div>
+        <div id="generation-metrics-grid" class="generation-metrics-grid"></div>
+      </section>
     </section>
 
     <!-- Studio Stage: Video Output & Live Preview -->

@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 dotenv.config();
@@ -16,6 +16,40 @@ const LYRICS_DIR = path.join(__dirname, '../lyrics');
 const ROOT_DIR = path.join(__dirname, '..');
 const VIDEO_INPUT_DIR = path.join(ROOT_DIR, 'videos', 'input');
 const VIDEO_OUTPUT_DIR = path.join(ROOT_DIR, 'videos', 'output');
+
+let cachedVideoEncoder = null;
+
+function getBestVideoEncoder() {
+  if (cachedVideoEncoder) return cachedVideoEncoder;
+
+  const fallback = { name: 'libx264', flags: ['-preset', 'ultrafast'] };
+  const flags = {
+    h264_nvenc: ['-preset', 'p1', '-cq', '19'],
+    h264_qsv: ['-preset', 'veryfast'],
+    h264_amf: ['-quality', 'speed', '-rc', 'cqp', '-qp_i', '19', '-qp_p', '19'],
+    h264_videotoolbox: [],
+    h264_mf: ['-rate_control', 'cbr', '-b:v', '3M'],
+    libx264: fallback.flags
+  };
+  const candidates = ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_videotoolbox', 'h264_mf', 'libx264'];
+
+  try {
+    const result = spawnSync('ffmpeg', ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+    const output = `${result.stdout || ''}${result.stderr || ''}`;
+    const available = candidates.filter((name) => new RegExp(`\\b${name}\\b`).test(output));
+    const selected = available.find((name) => {
+      const probe = spawnSync('ffmpeg', [
+        '-y', '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=30:d=0.1',
+        '-c:v', name, ...flags[name], '-f', 'null', '-'
+      ], { encoding: 'utf8', stdio: 'ignore' });
+      return probe.status === 0;
+    });
+    cachedVideoEncoder = selected ? { name: selected, flags: flags[selected] } : fallback;
+  } catch {
+    cachedVideoEncoder = fallback;
+  }
+  return cachedVideoEncoder;
+}
 
 // Ensure directories exist
 if (!fs.existsSync(LYRICS_DIR)) fs.mkdirSync(LYRICS_DIR, { recursive: true });
@@ -138,6 +172,8 @@ app.get('/api/generate-video-stream', async (req, res) => {
   const startSeconds = req.query.start_seconds || '';
   const endSeconds = req.query.end_seconds || '';
   const previewQuality = req.query.preview_quality || 'final';
+  const masterVariant = req.query.master_variant || 'default';
+  const ytHindiVariant = req.query.yt_hindi_variant || 'standard';
 
   const burnText = req.query.burn_text === 'true';
 
@@ -153,6 +189,8 @@ app.get('/api/generate-video-stream', async (req, res) => {
     `--ypos=${ypos}`,
     `--xpos=${xpos}`,
     `--brat-theme=${bratTheme}`,
+    `--master-variant=${masterVariant}`,
+    `--yt-hindi-variant=${ytHindiVariant}`,
     '--json-progress'
   ];
   if (!burnText) {
@@ -366,7 +404,8 @@ app.post('/api/convert-webm-to-mp4', (req, res) => {
       ffmpegArgs.push('-filter:v', `setpts=${speed.toFixed(2)}*PTS`);
     }
 
-    ffmpegArgs.push('-c:v', 'libx264', '-pix_fmt', 'yuv420p');
+    const videoEncoder = getBestVideoEncoder();
+    ffmpegArgs.push('-c:v', videoEncoder.name, ...videoEncoder.flags, '-pix_fmt', 'yuv420p');
 
     if (resolvedAudio) {
       ffmpegArgs.push('-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '192k', '-shortest');

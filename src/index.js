@@ -16,6 +16,7 @@ const LYRICS_DIR = path.join(__dirname, '../lyrics');
 const ROOT_DIR = path.join(__dirname, '..');
 const VIDEO_INPUT_DIR = path.join(ROOT_DIR, 'videos', 'input');
 const VIDEO_OUTPUT_DIR = path.join(ROOT_DIR, 'videos', 'output');
+const CAROUSEL_OUTPUT_DIR = path.join(VIDEO_OUTPUT_DIR, 'carousels');
 
 let cachedVideoEncoder = null;
 
@@ -55,6 +56,7 @@ function getBestVideoEncoder() {
 if (!fs.existsSync(LYRICS_DIR)) fs.mkdirSync(LYRICS_DIR, { recursive: true });
 if (!fs.existsSync(VIDEO_INPUT_DIR)) fs.mkdirSync(VIDEO_INPUT_DIR, { recursive: true });
 if (!fs.existsSync(VIDEO_OUTPUT_DIR)) fs.mkdirSync(VIDEO_OUTPUT_DIR, { recursive: true });
+if (!fs.existsSync(CAROUSEL_OUTPUT_DIR)) fs.mkdirSync(CAROUSEL_OUTPUT_DIR, { recursive: true });
 
 export function getPythonExecutable() {
   const rootDir = path.join(__dirname, '..');
@@ -83,6 +85,57 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '../public')));
 app.use('/lyrics', express.static(LYRICS_DIR));
 app.use('/videos', express.static(VIDEO_OUTPUT_DIR));
+app.use('/carousel-output', express.static(CAROUSEL_OUTPUT_DIR));
+app.use('/stickers', express.static(path.join(ROOT_DIR, 'stickers')));
+app.use('/templates', express.static(path.join(ROOT_DIR, 'templates')));
+
+app.get('/api/carousel-lyrics', async (req, res) => {
+  const query = String(req.query.q || '').trim();
+  if (!query) return res.status(400).json({ error: 'Spotify link or song query is required.' });
+
+  try {
+    const lookupScript = path.join(ROOT_DIR, 'carousel_lyrics_lookup.py');
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(getPythonExecutable(), [lookupScript, query], { cwd: ROOT_DIR });
+      let stdout = '';
+      let stderr = '';
+      child.stdout.on('data', (chunk) => { stdout += chunk.toString(); });
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stdout, stderr }));
+    });
+    const lines = String(result.stdout || '').trim().split(/\r?\n/).filter(Boolean);
+    const payload = lines.length ? JSON.parse(lines[lines.length - 1]) : {};
+    if (result.code !== 0 || payload.error) {
+      return res.status(400).json({ error: payload.error || 'Could not resolve lyrics.', detail: result.stderr });
+    }
+    if (!Array.isArray(payload.lines) || payload.lines.length === 0) {
+      return res.status(404).json({ error: 'No synced lyrics were found for this track.' });
+    }
+    return res.json(payload);
+  } catch (error) {
+    console.error('Carousel lyric lookup error:', error);
+    return res.status(500).json({ error: 'Could not fetch carousel lyrics.', detail: error.message });
+  }
+});
+
+/**
+ * GET /api/nokia-stickers
+ * List available sticker filenames from stickers/ directory.
+ */
+app.get('/api/nokia-stickers', async (req, res) => {
+  try {
+    const stickersDir = path.join(ROOT_DIR, 'stickers');
+    if (!fs.existsSync(stickersDir)) {
+      await fs.promises.mkdir(stickersDir, { recursive: true });
+    }
+    const files = await fs.promises.readdir(stickersDir);
+    const stickers = files.filter(f => /\.(png|webp|jpe?g)$/i.test(f)).sort();
+    return res.json({ stickers });
+  } catch (error) {
+    return res.status(500).json({ error: 'Could not list stickers', detail: error.message });
+  }
+});
 
 /**
  * Utility: Parse raw LRC text into structured timestamps JSON
@@ -174,6 +227,8 @@ app.get('/api/generate-video-stream', async (req, res) => {
   const previewQuality = req.query.preview_quality || 'final';
   const masterVariant = req.query.master_variant || 'default';
   const ytHindiVariant = req.query.yt_hindi_variant || 'standard';
+  const nokiaScreenColor = req.query.nokia_screen_color || req.query.screen_color || '#b40000';
+  const nokiaSticker = req.query.nokia_sticker || '';
 
   const burnText = req.query.burn_text === 'true';
 
@@ -191,8 +246,12 @@ app.get('/api/generate-video-stream', async (req, res) => {
     `--brat-theme=${bratTheme}`,
     `--master-variant=${masterVariant}`,
     `--yt-hindi-variant=${ytHindiVariant}`,
+    `--nokia-screen-color=${nokiaScreenColor}`,
     '--json-progress'
   ];
+  if (nokiaSticker) {
+    pythonArgs.push(`--nokia-sticker=${nokiaSticker}`);
+  }
   if (!burnText) {
     pythonArgs.push('--clean-base');
   }
@@ -287,6 +346,63 @@ app.get('/api/generate-video-stream', async (req, res) => {
 });
 
 /**
+ * POST /api/generate-carousel
+ * Render one PNG slide per selected lyric line.
+ */
+app.post('/api/generate-carousel', async (req, res) => {
+  const body = req.body || {};
+  const aspectRatio = body.aspect_ratio === '9:16' ? '9:16' : '4:5';
+  const lyricsLines = Array.isArray(body.lyrics_lines)
+    ? body.lyrics_lines.map((line) => String(line).trim()).filter(Boolean)
+    : [];
+  if (!lyricsLines.length) return res.status(400).json({ error: 'Provide at least one lyric line.' });
+
+  const title = String(body.song_title || 'Unknown song').trim().slice(0, 200);
+  const artist = String(body.artist_name || 'Unknown artist').trim().slice(0, 200);
+  const cover = String(body.album_cover || '').trim().slice(0, 2000);
+  const requestedWorkers = Number(body.workers);
+  const workers = Number.isFinite(requestedWorkers) ? Math.max(1, Math.min(8, Math.floor(requestedWorkers))) : 4;
+  const folderName = `${title || 'carousel'}_${Date.now()}`.replace(/[^a-zA-Z0-9_-]/g, '_').toLowerCase().slice(0, 80);
+  const outputDir = path.join(CAROUSEL_OUTPUT_DIR, folderName);
+  const tempWorkDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'lyric-carousel-'));
+  const inputPath = path.join(tempWorkDir, 'carousel_input.json');
+
+  try {
+    await fs.promises.mkdir(outputDir, { recursive: true });
+    await fs.promises.writeFile(inputPath, JSON.stringify({
+      song_title: title,
+      artist_name: artist,
+      album_cover: cover,
+      lyrics_lines: lyricsLines,
+    }), 'utf8');
+    const renderer = path.join(ROOT_DIR, 'carousel_renderer.py');
+    const result = await new Promise((resolve, reject) => {
+      const child = spawn(getPythonExecutable(), [renderer, inputPath, outputDir, '--format', aspectRatio, '--workers', String(workers)], { cwd: ROOT_DIR });
+      let stderr = '';
+      child.stderr.on('data', (chunk) => { stderr += chunk.toString(); });
+      child.on('error', reject);
+      child.on('close', (code) => resolve({ code, stderr }));
+    });
+    if (result.code !== 0) {
+      return res.status(500).json({ error: 'Carousel rendering failed.', detail: String(result.stderr || '').slice(-1200) });
+    }
+    const filenames = (await fs.promises.readdir(outputDir))
+      .filter((filename) => /^slide_\d+\.png$/i.test(filename))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    const slides = filenames.map((filename) => ({
+      filename,
+      url: `/carousel-output/${encodeURIComponent(folderName)}/${encodeURIComponent(filename)}`,
+    }));
+    return res.json({ status: 'success', count: slides.length, aspect_ratio: aspectRatio, folderUrl: slides[0]?.url || '#', slides });
+  } catch (error) {
+    console.error('Carousel generation error:', error);
+    return res.status(500).json({ error: 'Could not generate carousel.', detail: error.message });
+  } finally {
+    await fs.promises.rm(tempWorkDir, { recursive: true, force: true }).catch(() => {});
+  }
+});
+
+/**
  * POST /api/quick-burn-video
  * Instant hardware-accelerated 1-2s burn of the active live layer directly into the video
  * without re-downloading audio or re-running yt-dlp!
@@ -328,8 +444,13 @@ app.post('/api/quick-burn-video', async (req, res) => {
       `--ypos=${ypos || 50}`,
       `--xpos=${xpos || 50}`,
       `--brat-theme=${brat_theme || 'green'}`,
+      `--nokia-screen-color=${req.body.nokia_screen_color || req.body.screen_color || '#b40000'}`,
       '--json-progress'
     ];
+
+    if (req.body.nokia_sticker) {
+      pythonArgs.push(`--nokia-sticker=${req.body.nokia_sticker}`);
+    }
 
     const resolvedAudio = (audioPath && fs.existsSync(audioPath))
       ? audioPath

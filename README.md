@@ -57,3 +57,18 @@ Open `http://localhost:3000` in your browser.
 - **Engine**: Python 3.10+ with `yt-dlp`, `requests`, `Pillow`, and `AI4Bharat IndicXlit`
 - **Video Renderer**: FFmpeg with GPU hardware acceleration (`h264_mf` / `h264_nvenc`)
 - **Subtitle Engine**: `libass` with custom font mappings
+
+---
+
+## Lyric carousel renderer
+
+`carousel_renderer.py` is a standalone Pillow renderer for Spotify-style
+Instagram lyric carousels. It does not modify the existing video templates.
+It accepts JSON or CSV, extracts a dominant album-art color, and writes one
+PNG per lyric line.
+
+```powershell
+.venv310\Scripts\python.exe carousel_renderer.py examples\carousel_input.json output\carousel --format 4:5 --workers 4
+```
+
+Use `4:5` for 1080x1350 carousel posts or `9:16` for 1080x1920 stories/reels.

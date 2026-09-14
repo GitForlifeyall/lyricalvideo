@@ -32,6 +32,7 @@ try:
 except ImportError:
     YTMusic = None
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import numpy as np
 
 YT_HINDI_TRANSITION_SECONDS = 0.42
 
@@ -547,9 +548,10 @@ def fetch_spotify_track_metadata(spotify_url: str) -> Dict[str, Any]:
             timeout=8,
         )
         response.raise_for_status()
+        page_html = response.text
         next_data = re.search(
             r'<script id="__NEXT_DATA__"[^>]*>([^<]+)</script>',
-            response.text,
+            page_html,
         )
         if not next_data:
             return {}
@@ -578,10 +580,53 @@ def fetch_spotify_track_metadata(spotify_url: str) -> Dict[str, Any]:
             ).strip()
         else:
             artists = str(entity.get("subtitle") or "").strip()
+        album_data = entity.get("album") if isinstance(entity.get("album"), dict) else {}
+        album_images = album_data.get("images") if isinstance(album_data, dict) else []
+        cover_art = entity.get("coverArt") if isinstance(entity.get("coverArt"), dict) else {}
+        cover_sources = cover_art.get("sources") if isinstance(cover_art, dict) else []
+        visual_identity = entity.get("visualIdentity") if isinstance(entity.get("visualIdentity"), dict) else {}
+        visual_images = visual_identity.get("image") if isinstance(visual_identity, dict) else []
+        if not album_images and isinstance(cover_sources, list):
+            album_images = cover_sources
+        if not album_images and isinstance(visual_images, list):
+            album_images = visual_images
+        cover_url = ""
+        if isinstance(album_images, list) and album_images:
+            first_image = album_images[0]
+            if isinstance(first_image, dict):
+                cover_url = str(first_image.get("url") or "").strip()
+        if not cover_url:
+            image_meta = re.search(
+                r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)',
+                page_html,
+                flags=re.IGNORECASE,
+            )
+            cover_url = image_meta.group(1).strip() if image_meta else ""
+        if not cover_url:
+            # Spotify's embed page currently renders the cover as a normal img
+            # tag, even when it omits og:image and album.images from the entity.
+            image_src = re.search(
+                r'<img[^>]+(?:class=["\'][^"\']*CoverArt[^"\']*["\'][^>]+)?src=["\']([^"\']+)',
+                page_html,
+                flags=re.IGNORECASE,
+            )
+            cover_url = image_src.group(1).strip() if image_src else ""
+        if not cover_url:
+            try:
+                oembed = requests.get(
+                    f"https://open.spotify.com/oembed?url={urllib.parse.quote(spotify_url, safe='')}",
+                    headers={"User-Agent": BROWSER_HEADERS["User-Agent"]},
+                    timeout=5,
+                )
+                if oembed.ok:
+                    cover_url = str(oembed.json().get("thumbnail_url") or "").strip()
+            except Exception:
+                pass
         return {
             "title": str(entity.get("name") or entity.get("title") or "").strip(),
             "artists": artists,
             "duration": float(entity.get("duration") or 0) / 1000.0,
+            "cover_url": cover_url,
         }
     except Exception as exc:
         emit_progress("spotify_metadata_warning", 42, f"Spotify metadata lookup unavailable: {type(exc).__name__}")
@@ -1677,8 +1722,120 @@ TEMPLATES = {
         "scale_x": 100,
         "blur": 0.0,
         "force_lowercase": False,
+    },
+    "c19_nokia": {
+        "id": "c19_nokia",
+        "name": "C19 Nokia (Retro Phone)",
+        "aspect_ratio": "square",
+        "font_name": "Nokia Cellphone FC",
+        "font_size": 115,
+        "primary_color": "&H00000000",
+        "outline_color": "&H00000000",
+        "back_color": "&H00000000",
+        "bold": 1,
+        "outline_width": 0,
+        "shadow_depth": 0,
+        "margin_v": 0,
+        "bg_color": "#b40000",
+        "scale_x": 100,
+        "blur": 0.0,
+        "force_lowercase": True,
     }
 }
+
+
+def parse_hex_color(hex_str: str) -> Tuple[int, int, int]:
+    """Parse hex color string (e.g. '#b40000' or 'b40000') into (R, G, B) tuple."""
+    clean = re.sub(r'[^0-9a-fA-F]', '', hex_str or '')
+    if len(clean) == 3:
+        clean = ''.join(c * 2 for c in clean)
+    if len(clean) >= 6:
+        return (int(clean[:2], 16), int(clean[2:4], 16), int(clean[4:6], 16))
+    return (180, 0, 0)  # Default Retro Red #b40000
+
+
+def get_nokia_background(screen_color: str = "#b40000", sticker: Optional[str] = None, cache_dir: str = "videos/cache") -> str:
+    """
+    Renders or loads the cached 1080x1080 Nokia retro phone backdrop with dynamic screen_color and optional header sticker.
+    Uses pure monochrome brightness mapping so recolored screens have zero red bleeding or icon edge artifacts.
+    """
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    resolved_cache = os.path.join(base_dir, cache_dir)
+    os.makedirs(resolved_cache, exist_ok=True)
+
+    clean_hex = re.sub(r'[^0-9a-fA-F]', '', screen_color or 'b40000').lower()
+    if not clean_hex:
+        clean_hex = 'b40000'
+
+    # Resolve sticker if requested
+    sticker_path = None
+    sticker_key = "nosticker"
+    stickers_dir = os.path.join(base_dir, "stickers")
+    if sticker and str(sticker).strip().lower() not in ("none", "false", "0", ""):
+        stk_str = str(sticker).strip()
+        if stk_str.lower() in ("random", "true", "1"):
+            if os.path.exists(stickers_dir):
+                available = [f for f in os.listdir(stickers_dir) if f.lower().endswith(('.png', '.webp', '.jpg', '.jpeg'))]
+                if available:
+                    chosen = random.choice(available)
+                    sticker_path = os.path.join(stickers_dir, chosen)
+                    sticker_key = os.path.splitext(chosen)[0].lower()
+        else:
+            cand = os.path.join(stickers_dir, stk_str)
+            if not os.path.exists(cand) and not stk_str.endswith(".png"):
+                cand = os.path.join(stickers_dir, f"{stk_str}.png")
+            if os.path.exists(cand):
+                sticker_path = cand
+                sticker_key = os.path.splitext(os.path.basename(cand))[0].lower()
+
+    out_path = os.path.join(resolved_cache, f"nokia_bg_{clean_hex}_{sticker_key}.png")
+    if os.path.exists(out_path):
+        return out_path
+
+    base_path = os.path.join(base_dir, "templates", "c19_nokia", "screen_base_1080.png")
+    if not os.path.exists(base_path):
+        base_path = os.path.join(base_dir, "templates", "c19_nokia", "phone_base.png")
+
+    if not os.path.exists(base_path):
+        r, g, b = parse_hex_color(screen_color or "#b40000")
+        fallback = Image.new("RGB", (1080, 1080), (r, g, b))
+        fallback.save(out_path, "PNG")
+        return out_path
+
+    img = Image.open(base_path).convert("RGB")
+    target_r, target_g, target_b = parse_hex_color(screen_color or "#b40000")
+
+    # If it's already the default retro red (#b40000)
+    if clean_hex in ("b40000", "b40001", "b30000", "b50000"):
+        res = img.copy()
+    else:
+        arr = np.array(img).astype(float)
+        # Red channel represents display brightness (0 = black icon/bezel, 180 = full screen backlight)
+        # Anti-aliased sub-pixels are smoothly mapped without any red contamination
+        brightness = np.clip(arr[:, :, 0] / 180.0, 0.0, 1.0)
+        new_arr = np.zeros_like(arr, dtype=np.uint8)
+        new_arr[:, :, 0] = np.clip(brightness * target_r, 0, 255).astype(np.uint8)
+        new_arr[:, :, 1] = np.clip(brightness * target_g, 0, 255).astype(np.uint8)
+        new_arr[:, :, 2] = np.clip(brightness * target_b, 0, 255).astype(np.uint8)
+        res = Image.fromarray(new_arr)
+
+    # Composite sticker if present
+    if sticker_path and os.path.exists(sticker_path):
+        try:
+            stk_img = Image.open(sticker_path).convert("RGBA")
+            target_h = 76
+            target_w = max(1, int(stk_img.width * (target_h / stk_img.height)))
+            stk_resized = stk_img.resize((target_w, target_h), Image.Resampling.LANCZOS)
+            pos_x = (1080 - target_w) // 2
+            pos_y = 52
+            res = res.convert("RGBA")
+            res.paste(stk_resized, (pos_x, pos_y), stk_resized)
+            res = res.convert("RGB")
+        except Exception as e:
+            print(f"[Nokia Sticker] Warning: Could not composite sticker: {e}", flush=True)
+
+    res.save(out_path, "PNG")
+    return out_path
 
 
 def get_top_header_text(user_header: Optional[str] = None) -> str:
@@ -2411,6 +2568,7 @@ def build_ass_and_lrc_content(
     tpl_id = (template_key or "").lower().strip()
     is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
     is_master = (tpl_id == "master_lyrics")
+    is_nokia = (tpl_id in ("c19_nokia", "c19 nokia", "nokia"))
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
@@ -2419,6 +2577,9 @@ def build_ass_and_lrc_content(
         is_brat = False
     elif is_master:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["master_lyrics"])
+        is_brat = False
+    elif is_nokia:
+        tpl = TEMPLATES.get("c19_nokia", TEMPLATES["c19_nokia"])
         is_brat = False
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
@@ -2432,6 +2593,8 @@ def build_ass_and_lrc_content(
         effective_font = "Arial Narrow" if not font_name or font_name == "Impact" else font_name
     elif is_yt_hindi:
         effective_font = font_name if font_name and font_name != "Impact" else "EB Garamond"
+    elif is_nokia:
+        effective_font = "Nokia Cellphone FC" if not font_name or font_name in ("Impact", "Silkscreen") else font_name
     else:
         effective_font = font_name if font_name and font_name != "Impact" else tpl["font_name"]
 
@@ -2445,6 +2608,9 @@ def build_ass_and_lrc_content(
     # Configure canvas resolution & 1080p Normalization (Matches 360px Browser Preview 1:1)
     res_x = 1080 if is_portrait else 1920
     res_y = 1920 if is_portrait else 1080
+    if is_nokia:
+        res_x = 1080
+        res_y = 1080
     scale_factor = res_x / 360.0  # 3.0 for 1080x1920 portrait
     margin_l = int(res_x * 0.08)
     margin_r = int(res_x * 0.08)
@@ -2484,7 +2650,22 @@ def build_ass_and_lrc_content(
         strikeout_val = 0
         outline_width = 0
         shadow_depth = 0
-
+    elif is_nokia:
+        target_x = 75 if (x_percent is None or x_percent == 50.0) else int(res_x * (float(x_percent) / 100.0))
+        target_y = 350 if (y_percent is None or y_percent == 50.0) else int(res_y * (float(y_percent) / 100.0))
+        pos_override_tag = f"{{\\an7\\pos({target_x},{target_y})}}"
+        alignment = 7
+        margin_l = 75
+        margin_r = 75
+        primary_color = "&H00000000"
+        outline_color = "&H00000000"
+        back_color = "&H00000000"
+        bold_val = 1
+        scale_x_val = 100
+        raw_spacing = int(spacing) if spacing is not None else 0
+        strikeout_val = 0
+        outline_width = 0
+        shadow_depth = 0
     else:
         primary_color = tpl.get("primary_color", "&H00FFFFFF")
         outline_color = tpl.get("outline_color", "&H00000000")
@@ -2496,8 +2677,11 @@ def build_ass_and_lrc_content(
         outline_width = int(tpl.get("outline_width", 4) * scale_factor)
         shadow_depth = int(tpl.get("shadow_depth", 3) * scale_factor)
 
-    raw_fs = font_size if font_size and font_size > 0 else (tpl.get("font_size") or 72)
-    actual_font_size = int(raw_fs * scale_factor) if raw_fs <= 140 else int(raw_fs)
+    raw_fs = font_size if font_size and font_size > 0 else (tpl.get("font_size") or 115)
+    if is_nokia:
+        actual_font_size = int(raw_fs) if raw_fs >= 75 else 115
+    else:
+        actual_font_size = int(raw_fs * scale_factor) if raw_fs <= 140 else int(raw_fs)
     spacing_val = int(raw_spacing * scale_factor)
     w_space_val = int((int(word_spacing) if word_spacing is not None else 0) * scale_factor)
     eff_blur = float((float(blur_amount) if (blur_amount is not None and blur_amount >= 0) else (tpl.get("blur") or 1.8)) * 8.5)
@@ -2636,6 +2820,31 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             dialogue_text = f"{pos_override_tag}{fade_tag}{inline_tag}{formatted_clean}" if pos_override_tag else f"{fade_tag}{inline_tag}{formatted_clean}"
             dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(adjusted_start)},{seconds_to_ass_timestamp(adjusted_end)},Default,,0,0,0,,{dialogue_text}")
 
+        elif is_nokia:
+            # Word-by-word accumulation in Nokia Cellphone FC font
+            display_text = clean_text.lower()
+            words = [w for w in display_text.split() if w.strip()]
+            num_words = len(words)
+            if num_words == 0:
+                words = [display_text]
+                num_words = 1
+
+            line_dur = max(0.5, adjusted_end - adjusted_start)
+            type_dur = min(line_dur * 0.85, max(0.4, num_words * 0.28))
+            step_t = type_dur / num_words
+
+            accumulated_words = []
+            for w_idx in range(num_words):
+                accumulated_words.append(words[w_idx])
+                raw_text_string = " ".join(accumulated_words)
+                wrapped_text = wrap_lyrics_multiline(raw_text_string, max_chars=11)
+
+                w_start = adjusted_start + (w_idx * step_t)
+                w_end = adjusted_start + ((w_idx + 1) * step_t) if (w_idx + 1) < num_words else adjusted_end
+
+                nokia_tag = f"{{\\fn{effective_font}\\fs{actual_font_size}\\c&H000000&\\b1}}"
+                dlg_text = f"{pos_override_tag}{nokia_tag}{wrapped_text}" if pos_override_tag else f"{nokia_tag}{wrapped_text}"
+                dialogues.append(f"Dialogue: 0,{seconds_to_ass_timestamp(w_start)},{seconds_to_ass_timestamp(w_end)},Default,,0,0,0,,{dlg_text}")
 
         else:
             wrapped_text = wrap_lyrics_multiline(clean_text, max_chars=22)
@@ -2687,6 +2896,12 @@ def get_pillow_font(font_name: str, size: int):
         candidates.append("C:/Windows/Fonts/impact.ttf")
     elif "narrow" in font_lower:
         candidates.extend(["C:/Windows/Fonts/ARIALN.TTF", "C:/Windows/Fonts/ARIALNB.TTF", "C:/Windows/Fonts/arial.ttf"])
+    local_fonts = os.path.join(os.path.dirname(__file__), "fonts")
+    if "silk" in font_lower:
+        candidates.append(os.path.join(local_fonts, "Silkscreen-Regular.ttf"))
+    elif "press" in font_lower:
+        candidates.append(os.path.join(local_fonts, "PressStart2P-Regular.ttf"))
+    candidates.append(os.path.join(local_fonts, f"{font_name}.ttf"))
     candidates.extend([
         f"C:/Windows/Fonts/{font_lower}.ttf",
         f"C:/Windows/Fonts/{font_lower}bd.ttf",
@@ -2994,6 +3209,60 @@ def render_lyric_video_ffmpeg(
     emit_progress("ffmpeg_rendering", 85, f"Step 3: Hardware encoding {res_str} video with {encoder_name}...")
     subprocess.run(ffmpeg_cmd, check=True)
     emit_progress("ffmpeg_done", 95, f"Step 3: Video successfully rendered to '{output_path}'.")
+    return output_path
+
+
+def render_nokia_video_ffmpeg(
+    audio_path: str,
+    ass_path: str,
+    output_path: str = "output_lyric_video.mp4",
+    duration: Optional[float] = None,
+    screen_color: str = "#b40000",
+    sticker: Optional[str] = None,
+    preview_quality: str = "final"
+) -> str:
+    """Renders C19 Nokia retro phone 1080x1080 square video with word-by-word lyrics."""
+    if not duration or duration <= 0:
+        duration = get_audio_duration(audio_path)
+
+    res_w = 1080
+    res_h = 1080
+    fps = 30
+
+    encoder_name, encoder_flags = get_encoder_for_quality(preview_quality)
+    emit_progress("ffmpeg_start", 75, f"Step 3: Rendering C19 Nokia {res_w}x{res_h} {fps}fps Video using {encoder_name} (Screen: {screen_color}, Sticker: {sticker or 'None'}, {duration:.1f}s)...")
+
+    bg_image = get_nokia_background(screen_color=screen_color, sticker=sticker)
+    normalized_ass = ass_path.replace("\\", "/")
+    if ":" in normalized_ass:
+        normalized_ass = normalized_ass.replace(":", "\\:")
+
+    fonts_dir = os.path.join(os.path.dirname(__file__), "fonts").replace("\\", "/")
+    if ":" in fonts_dir:
+        fonts_dir = fonts_dir.replace(":", "\\:")
+
+    vf_filter = f"ass={normalized_ass}:fontsdir='{fonts_dir}'"
+
+    ffmpeg_cmd = [
+        "ffmpeg", "-y",
+        "-threads", "0",
+        "-loop", "1", "-framerate", str(fps),
+        "-i", bg_image,
+        "-i", audio_path,
+        "-vf", vf_filter,
+        "-c:v", encoder_name,
+    ] + encoder_flags + [
+        "-pix_fmt", "yuv420p",
+        "-c:a", "aac",
+        "-b:a", "192k",
+        "-movflags", "+faststart",
+        "-shortest",
+        output_path
+    ]
+
+    emit_progress("ffmpeg_rendering", 85, f"Step 3: Hardware encoding 1080x1080 C19 Nokia video with {encoder_name}...")
+    subprocess.run(ffmpeg_cmd, check=True)
+    emit_progress("ffmpeg_done", 95, f"Step 3: C19 Nokia video successfully rendered to '{output_path}'.")
     return output_path
 
 
@@ -3844,13 +4113,16 @@ def generate_lyric_video(
     preview_quality: str = "final",
     intro_header: Optional[str] = None,
     master_variant: str = "default",
-    yt_hindi_variant: str = "standard"
+    yt_hindi_variant: str = "standard",
+    nokia_screen_color: str = "#b40000",
+    nokia_sticker: Optional[str] = None
 ) -> Dict[str, Any]:
-    """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type), Fonts, Languages, and Interactive Placement."""
+    """Main generator pipeline supporting Templates (1, 2, 3, 4 Brat, YT Hindi Type, C19 Nokia), Fonts, Languages, and Interactive Placement."""
     generation_started_at = time.perf_counter()
     generation_cpu_started_at = time.process_time()
     tpl_id = (template or "").lower().strip()
     is_yt_hindi = tpl_id in ("yt_hindi_type", "yt_hindi_intro")
+    is_nokia = tpl_id in ("c19_nokia", "c19 nokia", "nokia")
     if tpl_id in ["template4", "brat", "template_brat", "template4_brat", "template_4_brat"]:
         tpl = TEMPLATES["template4_brat"]
         is_brat = True
@@ -3864,6 +4136,10 @@ def generate_lyric_video(
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["master_lyrics"])
         is_brat = False
         bg_color = "photo"
+    elif is_nokia:
+        tpl = TEMPLATES.get("c19_nokia", TEMPLATES["c19_nokia"])
+        is_brat = False
+        bg_color = nokia_screen_color or "#b40000"
     else:
         tpl = TEMPLATES.get(tpl_id, TEMPLATES["template1"])
         is_brat = False
@@ -4137,6 +4413,17 @@ def generate_lyric_video(
             variant=master_variant
         )
 
+    elif is_nokia:
+        render_nokia_video_ffmpeg(
+            audio_path=audio_path,
+            ass_path=ass_path,
+            output_path=output_path,
+            duration=duration,
+            screen_color=nokia_screen_color or "#b40000",
+            sticker=nokia_sticker,
+            preview_quality=preview_quality
+        )
+
     elif clean_base:
         render_lyric_video_ffmpeg(
             audio_path=audio_path,
@@ -4261,6 +4548,8 @@ if __name__ == "__main__":
     spacing = None
     word_spacing = None
     brat_theme = "green"
+    nokia_screen_color = "#b40000"
+    nokia_sticker = None
     start_seconds = 0.0
     end_seconds = None
     clean_base = False
@@ -4346,6 +4635,14 @@ if __name__ == "__main__":
             master_variant = a.split("=", 1)[1].strip().lower()
         elif a.startswith("--yt-hindi-variant="):
             yt_hindi_variant = a.split("=", 1)[1].strip().lower()
+        elif a.startswith("--nokia-screen-color="):
+            nokia_screen_color = a.split("=", 1)[1].strip()
+        elif a.startswith("--screen-color="):
+            nokia_screen_color = a.split("=", 1)[1].strip()
+        elif a.startswith("--nokia-sticker="):
+            nokia_sticker = a.split("=", 1)[1].strip()
+        elif a.startswith("--sticker="):
+            nokia_sticker = a.split("=", 1)[1].strip()
 
     res = generate_lyric_video(
         song_query=query,
@@ -4372,9 +4669,9 @@ if __name__ == "__main__":
         preview_quality=preview_quality,
         intro_header=intro_header,
         master_variant=master_variant,
-        yt_hindi_variant=yt_hindi_variant
+        yt_hindi_variant=yt_hindi_variant,
+        nokia_screen_color=nokia_screen_color,
+        nokia_sticker=nokia_sticker
     )
     if JSON_MODE:
         print(f"__FINAL_RESULT__{json.dumps(res)}", flush=True)
-
-

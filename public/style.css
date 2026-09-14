@@ -551,8 +551,44 @@ body {
 }
 
 /* ==========================================================================
-   Brat (Charli XCX) Aesthetic & Live Reflow Canvas
+   C19 Nokia Screen Color Palettes
    ========================================================================== */
+.nokia-palettes-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  flex: 1;
+}
+
+.nokia-swatch-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+.nokia-swatch-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.nokia-swatch-btn.active {
+  background: rgba(195, 209, 142, 0.2);
+  border-color: #c3d18e;
+  color: #ffffff;
+  box-shadow: 0 0 12px rgba(195, 209, 142, 0.4);
+}
+
 .brat-palettes-group {
   display: flex;
   align-items: center;
@@ -1722,5 +1758,158 @@ body {
   .generate-btn {
     width: 100%;
     justify-content: center;
+  }
+}
+.carousel-options-panel {
+  margin: 1rem 0 0;
+  padding: 1rem;
+  border: 1px solid rgba(30, 215, 96, 0.28);
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(30, 215, 96, 0.08), rgba(139, 92, 246, 0.08));
+}
+
+.carousel-options-heading,
+.carousel-action-row,
+.carousel-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.carousel-options-heading p {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.carousel-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.carousel-cover-input,
+.carousel-lyrics-input {
+  grid-column: 1 / -1;
+}
+
+.carousel-fetch-status {
+  margin-top: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.carousel-selection-panel {
+  margin-top: 0.85rem;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.carousel-selection-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.carousel-selection-list {
+  display: grid;
+  max-height: 300px;
+  gap: 0.35rem;
+  overflow-y: auto;
+}
+
+.carousel-line-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.5rem;
+  border-radius: 8px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.carousel-line-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.carousel-lyrics-input {
+  width: 100%;
+  min-height: 140px;
+  margin-top: 0.75rem;
+  padding: 0.85rem 1rem;
+  box-sizing: border-box;
+  resize: vertical;
+  color: var(--text-primary);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  font: inherit;
+}
+
+.carousel-generate-btn {
+  white-space: nowrap;
+}
+
+.carousel-result-panel {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.carousel-result-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-top: 0.85rem;
+}
+
+.carousel-result-card {
+  min-width: 0;
+  padding: 0.45rem;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.carousel-result-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 5;
+  object-fit: cover;
+  border-radius: 8px;
+}
+
+.carousel-result-card a {
+  display: block;
+  overflow: hidden;
+  margin-top: 0.4rem;
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 680px) {
+  .carousel-options-heading,
+  .carousel-action-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .carousel-meta-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .carousel-cover-input,
+  .carousel-lyrics-input {
+    grid-column: auto;
   }
 }

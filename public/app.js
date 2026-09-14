@@ -20,6 +20,9 @@ const state = {
   xpos: 50,
   bratTheme: 'green',
   bratCasing: 'lower',
+  nokiaScreenColor: '#b40000',
+  nokiaStickersEnabled: false,
+  nokiaSticker: 'random',
   topHeader: '',
   introHeader: '',
   testStart: 0,
@@ -74,6 +77,13 @@ const ytHindiOptionsRow = document.getElementById('yt-hindi-options-row');
 const ytHindiTopHeaderInput = document.getElementById('yt-hindi-top-header-input');
 const ytHindiIntroOptionsRow = document.getElementById('yt-hindi-intro-options-row');
 const ytHindiIntroTextInput = document.getElementById('yt-hindi-intro-text-input');
+const nokiaOptionsRow = document.getElementById('nokia-options-row');
+const nokiaStickersRow = document.getElementById('nokia-stickers-row');
+const nokiaPalettes = document.querySelectorAll('.nokia-swatch-btn');
+const nokiaCustomColor = document.getElementById('nokia-custom-color');
+const nokiaStickersToggle = document.getElementById('nokia-stickers-toggle');
+const nokiaStickerSelect = document.getElementById('nokia-sticker-select');
+const nokiaStickerSelectGroup = document.getElementById('nokia-sticker-select-group');
 const testStartInput = document.getElementById('test-start-input');
 const testEndInput = document.getElementById('test-end-input');
 const previewQualityInput = document.getElementById('preview-quality-input');
@@ -200,23 +210,27 @@ function setupEventListeners() {
 
       const isBrat = ['template4_brat', 'template_4_brat', 'brat'].includes(state.template);
       const isYtHindi = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template);
+      const isNokia = ['c19_nokia', 'nokia', 'c19 nokia'].includes(state.template);
+
+      // Hide all template-specific option rows first
+      if (bratOptionsRow) bratOptionsRow.style.display = 'none';
+      if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
+      if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
+      if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
+      if (masterLyricsVariantRow) masterLyricsVariantRow.style.display = 'none';
+      if (ytHindiVariantRow) ytHindiVariantRow.style.display = 'none';
+      if (nokiaOptionsRow) nokiaOptionsRow.style.display = 'none';
+      if (nokiaStickersRow) nokiaStickersRow.style.display = 'none';
 
       if (isBrat) {
         if (bratOptionsRow) bratOptionsRow.style.display = 'flex';
         if (bratLiveSandbox) bratLiveSandbox.style.display = 'flex';
-        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
-        if (masterLyricsVariantRow) masterLyricsVariantRow.style.display = 'none';
-        if (ytHindiVariantRow) ytHindiVariantRow.style.display = 'none';
         state.fontFamily = 'Arial Narrow';
         fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === 'Arial Narrow'));
         updateBratText(bratSandboxInput ? bratSandboxInput.value : '365 partygirl');
         showToast('Activated 🟩 Brat Minimal Template (Charli XCX)');
       } else if (isYtHindi) {
-        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
-        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
         if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = (state.template === 'yt_hindi_type') ? 'flex' : 'none';
-        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
-        if (masterLyricsVariantRow) masterLyricsVariantRow.style.display = 'none';
         if (ytHindiVariantRow) ytHindiVariantRow.style.display = 'flex';
         state.fontFamily = 'EB Garamond';
         state.fontSize = 68;
@@ -230,11 +244,6 @@ function setupEventListeners() {
           showToast('🎬 YT Hindi Type activated — drop your background videos in videos/input!');
         }
       } else if (state.template === 'master_lyrics') {
-        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
-        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
-        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
-        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
-        if (ytHindiVariantRow) ytHindiVariantRow.style.display = 'none';
         if (masterLyricsVariantRow) masterLyricsVariantRow.style.display = 'flex';
         state.masterVariant = masterLyricsVariantSelect ? masterLyricsVariantSelect.value : 'default';
         state.fontFamily = state.masterVariant === 'zmusic' ? 'Roboto' : 'Arial';
@@ -243,13 +252,15 @@ function setupEventListeners() {
         fontBtns.forEach(b => b.classList.toggle('active', b.dataset.font === state.fontFamily));
         applyRealtimePlacementAndSize();
         showToast('📜 Master Lyric Template activated (Aesthetic verse card with black pill highlight)');
+      } else if (isNokia) {
+        if (nokiaOptionsRow) nokiaOptionsRow.style.display = 'flex';
+        if (nokiaStickersRow) nokiaStickersRow.style.display = 'flex';
+        state.fontFamily = 'Nokia Cellphone FC';
+        state.fontSize = 115;
+        state.blur = 0;
+        applyRealtimePlacementAndSize();
+        showToast('📱 C19 Nokia Template activated (1:1 Retro monochrome screen)');
       } else {
-        if (bratOptionsRow) bratOptionsRow.style.display = 'none';
-        if (bratLiveSandbox) bratLiveSandbox.style.display = 'none';
-        if (ytHindiOptionsRow) ytHindiOptionsRow.style.display = 'none';
-        if (ytHindiIntroOptionsRow) ytHindiIntroOptionsRow.style.display = 'none';
-        if (masterLyricsVariantRow) masterLyricsVariantRow.style.display = 'none';
-        if (ytHindiVariantRow) ytHindiVariantRow.style.display = 'none';
         showToast(`Selected ${pill.querySelector('.template-num').textContent.trim()}`);
       }
     });
@@ -289,6 +300,72 @@ function setupEventListeners() {
   if (ytHindiIntroTextInput) {
     ytHindiIntroTextInput.addEventListener('input', (e) => {
       state.introHeader = e.target.value;
+    });
+  }
+
+  // Load Available Nokia Stickers dynamically
+  async function loadNokiaStickers() {
+    try {
+      const res = await fetch('/api/nokia-stickers');
+      const data = await res.json();
+      if (data.stickers && Array.isArray(data.stickers) && nokiaStickerSelect) {
+        nokiaStickerSelect.innerHTML = '<option value="random">🎲 Random</option>';
+        data.stickers.forEach(stk => {
+          const opt = document.createElement('option');
+          opt.value = stk;
+          let label = stk.replace(/\.(png|webp|jpe?g)$/i, '').replace(/[_-]/g, ' ');
+          label = label.charAt(0).toUpperCase() + label.slice(1);
+          if (stk.includes('moon')) label = '🌙 ' + label;
+          else if (stk.includes('star')) label = '⭐ ' + label;
+          else label = '✨ ' + label;
+          opt.textContent = label;
+          nokiaStickerSelect.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      console.warn('Could not load nokia stickers:', err);
+    }
+  }
+  loadNokiaStickers();
+
+  // Nokia Screen Color Palettes
+  if (nokiaPalettes) {
+    nokiaPalettes.forEach(btn => {
+      btn.addEventListener('click', () => {
+        nokiaPalettes.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        state.nokiaScreenColor = btn.dataset.color;
+        if (nokiaCustomColor) nokiaCustomColor.value = state.nokiaScreenColor;
+        showToast(`Nokia Screen: ${btn.title}`);
+      });
+    });
+  }
+  if (nokiaCustomColor) {
+    nokiaCustomColor.addEventListener('input', (e) => {
+      state.nokiaScreenColor = e.target.value;
+      nokiaPalettes.forEach(b => b.classList.remove('active'));
+    });
+  }
+
+  // Nokia Stickers Toggle & Select
+  if (nokiaStickersToggle) {
+    nokiaStickersToggle.addEventListener('change', () => {
+      state.nokiaStickersEnabled = nokiaStickersToggle.checked;
+      if (nokiaStickerSelectGroup) {
+        nokiaStickerSelectGroup.style.opacity = state.nokiaStickersEnabled ? '1' : '0.55';
+      }
+      showToast(state.nokiaStickersEnabled ? '✨ Nokia Stickers enabled' : 'Nokia Stickers disabled');
+    });
+  }
+  if (nokiaStickerSelect) {
+    nokiaStickerSelect.addEventListener('change', () => {
+      state.nokiaSticker = nokiaStickerSelect.value;
+      if (!state.nokiaStickersEnabled && nokiaStickersToggle) {
+        nokiaStickersToggle.checked = true;
+        state.nokiaStickersEnabled = true;
+        if (nokiaStickerSelectGroup) nokiaStickerSelectGroup.style.opacity = '1';
+      }
+      showToast(`Selected sticker: ${nokiaStickerSelect.options[nokiaStickerSelect.selectedIndex]?.text || state.nokiaSticker}`);
     });
   }
 
@@ -851,6 +928,26 @@ function applyRealtimePlacementAndSize(showStageGuide = false) {
         stageLiveSubtitleOverlay.style.top = '50%';
         stageLiveSubtitleOverlay.style.transform = 'translateY(-50%)';
       }
+    } else if (state.template === 'c19_nokia') {
+      stageLiveSubtitleText.style.fontFamily = "'Nokia Cellphone FC', monospace";
+      stageLiveSubtitleText.style.fontSize = `${Math.round(state.fontSize * 0.28)}px`;
+      stageLiveSubtitleText.style.fontWeight = '900';
+      stageLiveSubtitleText.style.fontStretch = 'normal';
+      stageLiveSubtitleText.style.lineHeight = '1.25';
+      stageLiveSubtitleText.style.transform = 'none';
+      stageLiveSubtitleText.style.textAlign = 'left';
+      stageLiveSubtitleText.style.textAlignLast = 'left';
+      stageLiveSubtitleText.style.textTransform = 'lowercase';
+      stageLiveSubtitleText.style.color = '#000000';
+      stageLiveSubtitleText.style.textShadow = 'none';
+      stageLiveSubtitleText.style.textDecoration = 'none';
+      if (stageLiveSubtitleOverlay) {
+        stageLiveSubtitleOverlay.style.top = '32.5%';
+        stageLiveSubtitleOverlay.style.left = '7.0%';
+        stageLiveSubtitleOverlay.style.right = '7.0%';
+        stageLiveSubtitleOverlay.style.transform = 'none';
+        stageLiveSubtitleOverlay.style.justifyContent = 'flex-start';
+      }
     } else {
       stageLiveSubtitleText.style.fontFamily = state.fontFamily || 'Impact';
       stageLiveSubtitleText.style.fontWeight = (state.template === 'template1' || state.fontFamily === 'Impact') ? '800' : '600';
@@ -937,7 +1034,9 @@ function startGenerationPipeline(query, burnText = false) {
   const qualityParam = `&preview_quality=${encodeURIComponent(state.previewQuality || 'final')}`;
   const masterVariantParam = state.template === 'master_lyrics' ? `&master_variant=${encodeURIComponent(state.masterVariant || 'default')}` : '';
   const ytHindiVariantParam = ['yt_hindi_type', 'yt_hindi_intro'].includes(state.template) ? `&yt_hindi_variant=${encodeURIComponent(state.ytHindiVariant || 'standard')}` : '';
-  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}${topHeaderParam}${introHeaderParam}${testStartParam}${testEndParam}${qualityParam}${masterVariantParam}${ytHindiVariantParam}`;
+  const nokiaScreenColorParam = state.template === 'c19_nokia' ? `&nokia_screen_color=${encodeURIComponent(state.nokiaScreenColor || '#b40000')}` : '';
+  const nokiaStickerParam = (state.template === 'c19_nokia' && state.nokiaStickersEnabled) ? `&nokia_sticker=${encodeURIComponent(state.nokiaSticker || 'random')}` : '';
+  const sseUrl = `/api/generate-video-stream?q=${encodeURIComponent(query)}&template=${encodeURIComponent(state.template)}&font=${encodeURIComponent(state.fontFamily)}&fontsize=${encodeURIComponent(state.fontSize)}&blur=${encodeURIComponent(state.blur)}&spacing=${encodeURIComponent(state.spacing)}&word_spacing=${encodeURIComponent(state.wordSpacing)}&lang=${encodeURIComponent(state.language)}&placement=${encodeURIComponent(state.placement)}&ypos=${encodeURIComponent(state.ypos)}&xpos=${encodeURIComponent(state.xpos)}&brat_theme=${encodeURIComponent(state.bratTheme)}&burn_text=${burnText ? 'true' : 'false'}${topHeaderParam}${introHeaderParam}${testStartParam}${testEndParam}${qualityParam}${masterVariantParam}${ytHindiVariantParam}${nokiaScreenColorParam}${nokiaStickerParam}`;
   const eventSource = new EventSource(sseUrl);
   state.currentEventSource = eventSource;
   state.generationErrorHandled = false;
@@ -1052,13 +1151,14 @@ function handleGenerationComplete(data, isBurned = false) {
 
   showToast(isBurned ? 'Burned 1080p MP4 Ready! 🚀' : 'Clean Base Video Ready! Tune Live Layer ⚡');
 
-  const isPortrait = (data.metadata?.aspect_ratio || 'portrait') === 'portrait';
+  const isSquare = (data.metadata?.aspect_ratio === 'square') || state.template === 'c19_nokia';
+  const isPortrait = !isSquare && ((data.metadata?.aspect_ratio || 'portrait') === 'portrait');
   const tplUsed = (data.metadata?.template || state.template || 'template1').replace('template', 'Template ');
 
   // Populate Studio Stage
   stageSongTitle.textContent = data.metadata?.track_name || data.query;
-  const outputResolution = data.metadata?.metrics?.resolution || (isPortrait ? '1080x1920' : '1920x1080');
-  const outputShape = isPortrait ? '9:16 Portrait' : '16:9 Landscape';
+  const outputResolution = data.metadata?.metrics?.resolution || (isSquare ? '1080x1080' : (isPortrait ? '1080x1920' : '1920x1080'));
+  const outputShape = isSquare ? '1:1 Square' : (isPortrait ? '9:16 Portrait' : '16:9 Landscape');
   stageSongMeta.textContent = `${data.metadata?.artist_name || 'YouTube Video'} &bull; ${data.metadata?.duration || 0}s duration &bull; ${outputResolution} MP4 (${outputShape}) &bull; ${tplUsed.toUpperCase()}`;
 
   // Toggle Portrait frame styling on video container
